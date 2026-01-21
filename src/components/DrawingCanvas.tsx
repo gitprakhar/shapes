@@ -89,23 +89,23 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     
     if (!ctx || !shapeCtx) return;
 
-    // Set canvas size to full window with device pixel ratio support
+    // Set canvas size to 200vh x 200vh (50vh on each side) with device pixel ratio support
     const resizeCanvases = () => {
       const dpr = window.devicePixelRatio || 1;
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+      const viewportHeight = window.innerHeight;
+      const canvasSize = viewportHeight * 2; // 200vh = 2 * 100vh
       
       // Set actual size in memory (scaled for DPI)
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      shapeCanvas.width = width * dpr;
-      shapeCanvas.height = height * dpr;
+      canvas.width = canvasSize * dpr;
+      canvas.height = canvasSize * dpr;
+      shapeCanvas.width = canvasSize * dpr;
+      shapeCanvas.height = canvasSize * dpr;
       
       // Scale the canvas back down using CSS
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      shapeCanvas.style.width = `${width}px`;
-      shapeCanvas.style.height = `${height}px`;
+      canvas.style.width = `${canvasSize}px`;
+      canvas.style.height = `${canvasSize}px`;
+      shapeCanvas.style.width = `${canvasSize}px`;
+      shapeCanvas.style.height = `${canvasSize}px`;
       
       // Reset transforms and scale the drawing context
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -148,7 +148,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       }
       
       // Redraw shape after resize
-      drawShape(shapeCtx, width, height);
+      drawShape(shapeCtx, canvasSize, canvasSize);
     };
 
     resizeCanvases();
@@ -254,9 +254,11 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     if (!canvas) return { x: 0, y: 0 };
     
     const rect = canvas.getBoundingClientRect();
-    // Account for the canvas transform offset (world coordinates)
-    const x = e.clientX - rect.left - offset.x;
-    const y = e.clientY - rect.top - offset.y;
+    // Get position relative to canvas element (canvas is inside transformed container)
+    // The container has transform translate(offset.x, offset.y), so we need to account for that
+    // rect.left already accounts for the transform, so we just need canvas-relative position
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     
     return {
       x,
@@ -340,8 +342,8 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
         x: center.x - offset.x,
         y: center.y - offset.y,
       });
-    } else if (e.touches.length === 1 && isKeyPressed) {
-      // Single touch with key pressed = drawing
+    } else if (e.touches.length === 1) {
+      // Single touch = drawing
       const canvas = canvasRef.current;
       if (!canvas) return;
       
@@ -351,8 +353,8 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
       const pos = {
-        x: touch.clientX - rect.left - offset.x,
-        y: touch.clientY - rect.top - offset.y,
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
       };
       
       const dpr = window.devicePixelRatio || 1;
@@ -381,12 +383,16 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       // Two-finger panning
       e.preventDefault();
       const center = getTouchCenter(e.touches[0], e.touches[1]);
+      const viewportHeight = window.innerHeight;
+      const maxOffset = viewportHeight * 0.5; // 50vh
+      const minOffset = -viewportHeight * 0.5; // -50vh
+      
       setOffset({
-        x: center.x - panStart.x,
-        y: center.y - panStart.y,
+        x: Math.max(minOffset, Math.min(maxOffset, center.x - panStart.x)),
+        y: Math.max(minOffset, Math.min(maxOffset, center.y - panStart.y)),
       });
-    } else if (e.touches.length === 1 && isDrawing && isKeyPressed) {
-      // Single touch with key pressed = drawing
+    } else if (e.touches.length === 1 && isDrawing) {
+      // Single touch = drawing
       const canvas = canvasRef.current;
       if (!canvas) return;
       
@@ -396,8 +402,8 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
       const pos = {
-        x: touch.clientX - rect.left - offset.x,
-        y: touch.clientY - rect.top - offset.y,
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
       };
       
       if (lastPointRef.current) {
@@ -456,28 +462,26 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       e.preventDefault();
       
       // Update offset based on wheel delta (trackpad panning)
+      // Limit panning to keep canvas within bounds (50vh on each side)
+      const viewportHeight = window.innerHeight;
+      const maxOffset = viewportHeight * 0.5; // 50vh
+      const minOffset = -viewportHeight * 0.5; // -50vh
+      
       setOffset(prev => ({
-        x: prev.x - e.deltaX,
-        y: prev.y - e.deltaY,
+        x: Math.max(minOffset, Math.min(maxOffset, prev.x - e.deltaX)),
+        y: Math.max(minOffset, Math.min(maxOffset, prev.y - e.deltaY)),
       }));
     }
   };
 
-  // Start drawing or panning - drawing only when key is pressed
+  // Start drawing - mouse click and drag
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawingEnabled) return;
     
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Middle mouse button panning removed - only two-finger trackpad panning now
-
-    // Only draw if key is pressed, otherwise do nothing (panning is only via two-finger trackpad)
-    if (!isKeyPressed) {
-      return;
-    }
-
-    // Start drawing (key is pressed)
+    // Start drawing on mouse click
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -510,8 +514,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Only draw if key is pressed and we're actually drawing
-    if (!isKeyPressed) return;
+    // Only draw if we're actually drawing
     if (!isDrawing) return;
 
     // Handle drawing
@@ -728,16 +731,16 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           zIndex: shouldSlideUp ? 10 : 0,
         }}
       >
-        {/* Infinite dot grid background - visible grid */}
+        {/* Grid background - 200vh x 200vh (50vh on each side) */}
         <div
           className="absolute pointer-events-none"
           style={{
             backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
             backgroundSize: '24px 24px',
-            width: '500%',
-            height: '500%',
-            left: '-200%',
-            top: '-200%',
+            width: '200vh',
+            height: '200vh',
+            left: '-50vh',
+            top: '-50vh',
             transform: `translate(${offset.x}px, ${offset.y}px)`,
             zIndex: 0,
           }}
@@ -764,14 +767,16 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
         </div>
 
 
-        {/* Canvas container with transform - like Gallery */}
+        {/* Canvas container with transform - 200vh x 200vh (50vh on each side) */}
         <div
           className="absolute"
           style={{
-            width: '100%',
-            height: '100%',
+            width: '200vh',
+            height: '200vh',
+            left: '-50vh',
+            top: '-50vh',
             transform: `translate(${offset.x}px, ${offset.y}px)`,
-            cursor: isKeyPressed ? 'crosshair' : 'default',
+            cursor: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto',
             userSelect: 'none',
           }}
           onTouchStart={handleTouchStart}
@@ -786,18 +791,18 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
             style={{ zIndex: 1, display: 'none' }}
           />
           
-          {/* Drawing canvas (interactive layer) */}
+          {/* Drawing canvas (interactive layer) - full size of container */}
           <canvas
             ref={canvasRef}
-            className="absolute inset-0"
+            className="absolute"
             style={{ 
+              width: '100%',
+              height: '100%',
+              top: 0,
+              left: 0,
               zIndex: 2,
-              cursor: isKeyPressed 
-                ? (isHovering 
-                  ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto' 
-                  : 'crosshair')
-                : 'default',
-              pointerEvents: isPanning && !isKeyPressed ? 'none' : 'auto',
+              cursor: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto',
+              pointerEvents: 'auto',
             }}
             onMouseDown={(e) => {
               e.stopPropagation(); // Prevent container from handling this
