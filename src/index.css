@@ -134,6 +134,10 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+    background-color: #F1F1F1;
+  }
+  html {
+    background-color: #F1F1F1;
   }
 }
 
