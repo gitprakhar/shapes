@@ -446,6 +446,23 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     lastTimeRef.current = 0;
   };
 
+  // Handle wheel events for trackpad two-finger panning
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!isDrawingEnabled) return;
+    
+    // Check if this is a trackpad pan gesture (not a zoom)
+    // Trackpad panning typically has ctrlKey or metaKey for zoom, so if those aren't pressed, it's panning
+    if (!e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      
+      // Update offset based on wheel delta (trackpad panning)
+      setOffset(prev => ({
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY,
+      }));
+    }
+  };
+
   // Start drawing or panning - drawing only when key is pressed
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawingEnabled) return;
@@ -760,6 +777,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onWheel={handleWheel}
         >
           {/* Shape canvas (base layer) - hidden for now */}
           <canvas
