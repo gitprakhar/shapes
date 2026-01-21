@@ -28,7 +28,10 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const [isHovering, setIsHovering] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [isKeyPressed, setIsKeyPressed] = useState(false); // Track if key is pressed for drawing
   const [offset, setOffset] = useState({ x: 0, y: 0 }); // Pan offset for infinite canvas
+  const lastTouchDistanceRef = useRef<number | null>(null); // For two-finger panning
+  const lastTouchCenterRef = useRef<Point | null>(null); // For two-finger panning
   const lastPointRef = useRef<Point | null>(null);
   const lastTimeRef = useRef<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,6 +177,31 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     };
   }, []);
 
+  // Handle keyboard events for drawing mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isDrawingEnabled) return;
+      // Allow drawing when any key is pressed (except modifier keys)
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        setIsKeyPressed(true);
+        setIsPanning(false); // Stop panning when key is pressed
+      }
+    };
+
+    const handleKeyUp = () => {
+      setIsKeyPressed(false);
+      setIsDrawing(false); // Stop drawing when key is released
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isDrawingEnabled]);
+
   // Redraw canvas when zoom or pan changes
   useEffect(() => {
     if (!isDrawingEnabled || drawingPathsRef.current.length === 0) return;
@@ -281,25 +309,158 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   };
 
 
-  // Start drawing or panning (like Gallery - simple click and drag)
+  // Calculate distance between two touches
+  const getTouchDistance = (touch1: React.Touch, touch2: React.Touch): number => {
+    return Math.sqrt(
+      Math.pow(touch2.clientX - touch1.clientX, 2) + Math.pow(touch2.clientY - touch1.clientY, 2)
+    );
+  };
+
+  // Calculate center point between two touches
+  const getTouchCenter = (touch1: React.Touch, touch2: React.Touch): Point => {
+    return {
+      x: (touch1.clientX + touch2.clientX) / 2,
+      y: (touch1.clientY + touch2.clientY) / 2,
+    };
+  };
+
+  // Handle touch events for two-finger panning
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isDrawingEnabled) return;
+    
+    if (e.touches.length === 2) {
+      // Two-finger panning
+      e.preventDefault();
+      setIsPanning(true);
+      const distance = getTouchDistance(e.touches[0], e.touches[1]);
+      const center = getTouchCenter(e.touches[0], e.touches[1]);
+      lastTouchDistanceRef.current = distance;
+      lastTouchCenterRef.current = center;
+      setPanStart({
+        x: center.x - offset.x,
+        y: center.y - offset.y,
+      });
+    } else if (e.touches.length === 1 && isKeyPressed) {
+      // Single touch with key pressed = drawing
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      const touch = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const pos = {
+        x: touch.clientX - rect.left - offset.x,
+        y: touch.clientY - rect.top - offset.y,
+      };
+      
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = STROKE_OPACITY;
+      
+      setIsDrawing(true);
+      lastPointRef.current = pos;
+      lastTimeRef.current = Date.now();
+      
+      drawingPathsRef.current.push({
+        points: [pos],
+        strokeWidth: BASE_STROKE_WIDTH,
+      });
+      
+      drawSvgStamp(ctx, pos.x, pos.y, BASE_STROKE_WIDTH);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDrawingEnabled) return;
+    
+    if (e.touches.length === 2 && isPanning) {
+      // Two-finger panning
+      e.preventDefault();
+      const center = getTouchCenter(e.touches[0], e.touches[1]);
+      setOffset({
+        x: center.x - panStart.x,
+        y: center.y - panStart.y,
+      });
+    } else if (e.touches.length === 1 && isDrawing && isKeyPressed) {
+      // Single touch with key pressed = drawing
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      const touch = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const pos = {
+        x: touch.clientX - rect.left - offset.x,
+        y: touch.clientY - rect.top - offset.y,
+      };
+      
+      if (lastPointRef.current) {
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = STROKE_OPACITY;
+        
+        const lastPoint = lastPointRef.current;
+        const currentTime = Date.now();
+        const timeDelta = currentTime - lastTimeRef.current;
+        const distance = Math.sqrt(
+          Math.pow(pos.x - lastPoint.x, 2) + Math.pow(pos.y - lastPoint.y, 2)
+        );
+        const strokeWidth = calculateStrokeWidth(distance, timeDelta);
+        
+        if (drawingPathsRef.current.length > 0) {
+          const currentPath = drawingPathsRef.current[drawingPathsRef.current.length - 1];
+          currentPath.points.push(pos);
+          currentPath.strokeWidth = strokeWidth;
+        }
+        
+        const stampSpacing = 8;
+        const stampCount = Math.max(1, Math.floor(distance / stampSpacing));
+        
+        for (let i = 0; i <= stampCount; i++) {
+          const t = i / stampCount;
+          const x = lastPoint.x + (pos.x - lastPoint.x) * t;
+          const y = lastPoint.y + (pos.y - lastPoint.y) * t;
+          drawSvgStamp(ctx, x, y, strokeWidth);
+        }
+        
+        lastPointRef.current = pos;
+        lastTimeRef.current = currentTime;
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsPanning(false);
+    setIsDrawing(false);
+    lastTouchDistanceRef.current = null;
+    lastTouchCenterRef.current = null;
+    lastPointRef.current = null;
+    lastTimeRef.current = 0;
+  };
+
+  // Start drawing or panning - drawing only when key is pressed
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawingEnabled) return;
     
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Check if middle mouse button for panning
-    if (e.button === 1) {
-      setIsPanning(true);
-      setPanStart({
-        x: e.clientX - offset.x,
-        y: e.clientY - offset.y,
-      });
-      e.preventDefault();
+    // Middle mouse button panning removed - only two-finger trackpad panning now
+
+    // Only draw if key is pressed, otherwise do nothing (panning is only via two-finger trackpad)
+    if (!isKeyPressed) {
       return;
     }
 
-    // Otherwise, start drawing
+    // Start drawing (key is pressed)
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -327,10 +488,14 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
 
   // Draw while moving with marker/crayon texture
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawingEnabled || isPanning) return; // Don't draw while panning
+    if (!isDrawingEnabled) return;
     
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // Only draw if key is pressed and we're actually drawing
+    if (!isKeyPressed) return;
+    if (!isDrawing) return;
 
     // Handle drawing
     const ctx = canvas.getContext('2d');
@@ -484,6 +649,18 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           zIndex: shouldSlideUp ? 0 : 10,
         }}
       >
+        {/* Grid dots background on homepage */}
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+            width: '100%',
+            height: '100%',
+            zIndex: 0,
+          }}
+        />
+
         {/* Shape image behind text - cycling through images */}
         <div className="absolute inset-0 flex items-center justify-center z-0 pointer-events-none overflow-visible">
           <img
@@ -534,11 +711,11 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           zIndex: shouldSlideUp ? 10 : 0,
         }}
       >
-        {/* Infinite dot grid background - like Gallery */}
+        {/* Infinite dot grid background - visible grid */}
         <div
           className="absolute pointer-events-none"
           style={{
-            backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.03) 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
             backgroundSize: '24px 24px',
             width: '500%',
             height: '500%',
@@ -577,34 +754,12 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
             width: '100%',
             height: '100%',
             transform: `translate(${offset.x}px, ${offset.y}px)`,
-            cursor: isPanning ? 'grabbing' : 'grab',
+            cursor: isKeyPressed ? 'crosshair' : 'default',
             userSelect: 'none',
           }}
-          onMouseDown={(e) => {
-            // Only pan if clicking on background, not drawing
-            if (e.button === 0 && !isDrawing) {
-              setIsPanning(true);
-              setPanStart({
-                x: e.clientX - offset.x,
-                y: e.clientY - offset.y,
-              });
-              e.preventDefault();
-            }
-          }}
-          onMouseMove={(e) => {
-            if (isPanning) {
-              setOffset({
-                x: e.clientX - panStart.x,
-                y: e.clientY - panStart.y,
-              });
-            }
-          }}
-          onMouseUp={() => {
-            setIsPanning(false);
-          }}
-          onMouseLeave={() => {
-            setIsPanning(false);
-          }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           {/* Shape canvas (base layer) - hidden for now */}
           <canvas
@@ -619,18 +774,30 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
             className="absolute inset-0"
             style={{ 
               zIndex: 2,
-              cursor: isHovering 
-                ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto' 
-                : 'crosshair',
-              pointerEvents: isPanning ? 'none' : 'auto',
+              cursor: isKeyPressed 
+                ? (isHovering 
+                  ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto' 
+                  : 'crosshair')
+                : 'default',
+              pointerEvents: isPanning && !isKeyPressed ? 'none' : 'auto',
             }}
-            onMouseDown={handleMouseDown}
+            onMouseDown={(e) => {
+              e.stopPropagation(); // Prevent container from handling this
+              handleMouseDown(e);
+            }}
             onMouseMove={(e) => {
+              e.stopPropagation(); // Prevent container from handling this
               setIsHovering(true);
               handleMouseMove(e);
             }}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseLeave}
+            onMouseUp={(e) => {
+              e.stopPropagation(); // Prevent container from handling this
+              handleMouseUp();
+            }}
+            onMouseLeave={(e) => {
+              e.stopPropagation(); // Prevent container from handling this
+              handleMouseLeave();
+            }}
             onContextMenu={(e) => e.preventDefault()} // Prevent context menu on right click
           />
         </div>
