@@ -17,11 +17,12 @@ interface Submission {
 interface DrawingCanvasProps {
   onSubmit: (imageData: string, note: string) => void;
   existingSubmissions?: Submission[];
+  onOpenShapeCreator?: () => void;
 }
 
 // Simple crayon drawing - no sticky notes
 
-export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCanvasProps) {
+export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeCreator }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shapeCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -29,10 +30,12 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isKeyPressed, setIsKeyPressed] = useState(false); // Track if key is pressed for drawing
-  const [offset, setOffset] = useState({ x: 0, y: 0 }); // Pan offset for infinite canvas
+  const [offset, setOffset] = useState({ x: 0, y: 0 }); // Pan offset for page navigation (homepage <-> drawing area)
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
+  const [isTransitioning, setIsTransitioning] = useState(false); // Track if transitioning between pages
   const [zoom, setZoom] = useState(1); // Zoom level (1 = 100%)
   const zoomRef = useRef(1); // Ref to track current zoom for gesture handlers
-  const offsetRef = useRef({ x: 0, y: 0 }); // Ref to track current offset for gesture handlers
+  const offsetRef = useRef({ x: 0, y: 0 }); // Ref to track current canvasOffset for gesture handlers
   const lastTouchDistanceRef = useRef<number | null>(null); // For two-finger panning/zooming
   const lastTouchCenterRef = useRef<Point | null>(null); // For two-finger panning
   const lastGestureScaleRef = useRef<number>(1); // For trackpad gesture zoom
@@ -78,12 +81,68 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     return points;
   };
 
-  // Draw text instead of shape for now
+  // Draw the default shape (loaded from localStorage)
   const drawShape = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     ctx.clearRect(0, 0, width, height);
     
-    // Don't draw anything - shape removed for now
+    // Load default shape from localStorage
+    const defaultShapeData = localStorage.getItem('defaultShape');
+    if (defaultShapeData) {
+      const img = new Image();
+      img.onload = () => {
+        // Center the shape on the canvas at its original size (800x800px)
+        // The canvas is 300vh x 300vh, so center is at width/2, height/2
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const imgWidth = 800; // Original size from ShapeCreator (800x800px)
+        const imgHeight = 800;
+        
+        // Draw the image centered - coordinates are already in the scaled coordinate system (DPR applied)
+        ctx.drawImage(
+          img,
+          centerX - imgWidth / 2,
+          centerY - imgHeight / 2,
+          imgWidth,
+          imgHeight
+        );
+      };
+      img.onerror = () => {
+        console.error('Failed to load default shape image');
+      };
+      img.src = defaultShapeData;
+    }
   };
+
+  // Initialize canvas offset to center the shape in the viewport
+  useEffect(() => {
+    if (!isDrawingEnabled) return;
+    
+    // The canvas is 300vh x 300vh, positioned at -100vh, -100vh
+    // The shape is drawn at the center of the canvas (150vh, 150vh in canvas coords)
+    // Canvas container position: left: -100vh, top: -100vh
+    // Shape position in viewport (before transform): 
+    //   X: -100vh + 150vh = 50vh = viewportHeight * 0.5
+    //   Y: -100vh + 150vh = 50vh = viewportHeight * 0.5
+    // Viewport center: (viewportWidth/2, viewportHeight/2)
+    // To center the shape, we need to offset by:
+    //   offsetX = viewportWidth/2 - (viewportHeight * 0.5)
+    //   offsetY = viewportHeight/2 - (viewportHeight * 0.5) = 0
+    
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const viewportCenterX = viewportWidth / 2;
+    const viewportCenterY = viewportHeight / 2;
+    
+    // Shape position in viewport before offset (50vh = viewportHeight * 0.5)
+    const shapeXInViewport = viewportHeight * 0.5;
+    const shapeYInViewport = viewportHeight * 0.5;
+    
+    // Calculate offset to center the shape
+    const offsetX = viewportCenterX - shapeXInViewport;
+    const offsetY = viewportCenterY - shapeYInViewport;
+    
+    setCanvasOffset({ x: offsetX, y: offsetY });
+  }, [isDrawingEnabled]);
 
   // Initialize canvases
   useEffect(() => {
@@ -254,12 +313,12 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       const canvasX = (mouseRelX - currentOffset.x) / currentZoom;
       const canvasY = (mouseRelY - currentOffset.y) / currentZoom;
       
-      // Adjust offset so that canvasPoint appears at the same screen position after zoom
+      // Adjust canvasOffset so that canvasPoint appears at the same screen position after zoom
       const newOffsetX = mouseRelX - canvasX * newZoom;
       const newOffsetY = mouseRelY - canvasY * newZoom;
       
       setZoom(newZoom);
-      setOffset({
+      setCanvasOffset({
         x: newOffsetX,
         y: newOffsetY,
       });
@@ -298,8 +357,8 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   }, [zoom]);
 
   useEffect(() => {
-    offsetRef.current = offset;
-  }, [offset]);
+    offsetRef.current = canvasOffset;
+  }, [canvasOffset]);
 
   // Handle keyboard events for drawing mode
   useEffect(() => {
@@ -465,8 +524,8 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       lastTouchDistanceRef.current = distance;
       lastTouchCenterRef.current = center;
       setPanStart({
-        x: center.x - offset.x,
-        y: center.y - offset.y,
+        x: center.x - canvasOffset.x,
+        y: center.y - canvasOffset.y,
       });
     } else if (e.touches.length === 1) {
       // Single touch = drawing
@@ -541,17 +600,17 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           const centerRelY = centerY - containerRect.top;
           
           // Calculate the center position in canvas space (before zoom)
-          // canvasPoint = (centerPos - offset) / currentZoom
-          const canvasX = (centerRelX - offset.x) / zoom;
-          const canvasY = (centerRelY - offset.y) / zoom;
+          // canvasPoint = (centerPos - canvasOffset) / currentZoom
+          const canvasX = (centerRelX - canvasOffset.x) / zoom;
+          const canvasY = (centerRelY - canvasOffset.y) / zoom;
           
-          // Adjust offset so that canvasPoint appears at the same screen position after zoom
-          // newOffset = centerPos - (canvasPoint * newZoom)
+          // Adjust canvasOffset so that canvasPoint appears at the same screen position after zoom
+          // newCanvasOffset = centerPos - (canvasPoint * newZoom)
           const newOffsetX = centerRelX - canvasX * newZoom;
           const newOffsetY = centerRelY - canvasY * newZoom;
           
           setZoom(newZoom);
-          setOffset({
+          setCanvasOffset({
             x: newOffsetX,
             y: newOffsetY,
           });
@@ -565,7 +624,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       const maxOffset = viewportHeight * 1; // 100vh
       const minOffset = -viewportHeight * 1; // -100vh
       
-      setOffset({
+      setCanvasOffset({
         x: Math.max(minOffset, Math.min(maxOffset, center.x - panStart.x)),
         y: Math.max(minOffset, Math.min(maxOffset, center.y - panStart.y)),
       });
@@ -671,18 +730,17 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       const mouseRelY = mouseY - containerRect.top;
       
       // Calculate the point in canvas space (before zoom)
-      // canvasPoint = (mousePos - offset) / currentZoom
-      // But we need to account for the container's base position
-      const canvasX = (mouseRelX - offset.x) / zoom;
-      const canvasY = (mouseRelY - offset.y) / zoom;
+      // canvasPoint = (mousePos - canvasOffset) / currentZoom
+      const canvasX = (mouseRelX - canvasOffset.x) / zoom;
+      const canvasY = (mouseRelY - canvasOffset.y) / zoom;
       
-      // Adjust offset so that canvasPoint appears at the same screen position after zoom
-      // newOffset = mousePos - (canvasPoint * newZoom)
+      // Adjust canvasOffset so that canvasPoint appears at the same screen position after zoom
+      // newCanvasOffset = mousePos - (canvasPoint * newZoom)
       const newOffsetX = mouseRelX - canvasX * newZoom;
       const newOffsetY = mouseRelY - canvasY * newZoom;
       
       setZoom(newZoom);
-      setOffset({
+      setCanvasOffset({
         x: newOffsetX,
         y: newOffsetY,
       });
@@ -693,7 +751,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       const maxOffset = viewportHeight * 1; // 100vh
       const minOffset = -viewportHeight * 1; // -100vh
       
-      setOffset(prev => ({
+      setCanvasOffset(prev => ({
         x: Math.max(minOffset, Math.min(maxOffset, prev.x - e.deltaX)),
         y: Math.max(minOffset, Math.min(maxOffset, prev.y - e.deltaY)),
       }));
@@ -883,18 +941,30 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   };
 
   return (
-    <>
-      {/* Intro page - fades out */}
-      <div 
-        className="absolute inset-0 w-full h-screen overflow-hidden"
-        style={{ 
-          backgroundColor: '#F1F1F1',
-          opacity: shouldSlideUp ? 0 : 1,
-          transition: 'opacity 0.6s ease-out',
-          pointerEvents: shouldSlideUp ? 'none' : 'auto',
-          zIndex: shouldSlideUp ? 0 : 10,
+    <div className="fixed inset-0 overflow-hidden" style={{ backgroundColor: '#F1F1F1' }}>
+      {/* Single infinite canvas container - 400vh tall (200vh for homepage + 200vh for drawing) */}
+      <div
+        className="absolute"
+        style={{
+          width: '100vh',
+          height: '400vh',
+          left: 0,
+          top: 0,
+          transform: `translate(${offset.x}px, ${offset.y}px)`,
+          transition: isTransitioning ? 'none' : 'transform 0.1s ease-out',
+          willChange: isTransitioning ? 'transform' : 'auto',
         }}
       >
+        {/* Homepage section - positioned at y: 0 */}
+        <div 
+          className="absolute w-screen h-screen"
+          style={{ 
+            backgroundColor: '#F1F1F1',
+            left: 0,
+            top: 0,
+            pointerEvents: shouldSlideUp ? 'none' : 'auto',
+          }}
+        >
         {/* Grid dots background on homepage */}
         <div
           className="absolute pointer-events-none"
@@ -917,12 +987,12 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           />
         </div>
 
-        {/* Large centered text in EB Garamond */}
-        <div className="absolute inset-0 flex items-center justify-center z-1 pointer-events-none">
-          <div className="font-serif text-[150px] font-normal leading-none tracking-tight text-center max-w-5xl px-12" style={{ color: '#232323' }}>
-            Same shape. Different minds.
-          </div>
-        </div>
+                      {/* Large centered text in EB Garamond */}
+                      <div className="absolute inset-0 flex items-center justify-center z-1 pointer-events-none">
+                        <div className="font-serif text-[130px] font-normal leading-none tracking-tight text-center max-w-5xl px-12" style={{ color: '#232323' }}>
+                        The constraint is the point.
+                        </div>
+                      </div>
 
         {/* Enter Vibeform link at bottom */}
         <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10">
@@ -938,23 +1008,54 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
                 shapeIntervalRef.current = null;
               }
               setIsDrawingEnabled(true);
-              setShouldSlideUp(true);
+              setIsTransitioning(true);
+              
+              // Animate offset to pan to drawing area (200vh upwards)
+              // Drawing area is positioned at top: '200vh', so we need to pan by -200vh
+              const viewportHeight = window.innerHeight;
+              const targetOffsetY = -viewportHeight * 2; // -200vh (200vh in pixels)
+              
+              // Smooth transition over 800ms
+              const startTime = Date.now();
+              const duration = 800;
+              const startOffsetY = offset.y;
+              
+              const animate = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Use cubic-bezier easing (0.4, 0, 0.2, 1) - ease-in-out
+                const ease = progress < 0.5
+                  ? 2 * progress * progress
+                  : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                
+                const currentOffsetY = startOffsetY + (targetOffsetY - startOffsetY) * ease;
+                setOffset({ x: 0, y: currentOffsetY });
+                
+                if (progress < 1) {
+                  requestAnimationFrame(animate);
+                } else {
+                  setIsTransitioning(false);
+                  setShouldSlideUp(true);
+                }
+              };
+              
+              requestAnimationFrame(animate);
             }}
           >
-            Play Today's Vibeform
+            Start Today's Challenge
           </a>
         </div>
       </div>
 
-      {/* Drawing page - appears after dissolve */}
+      {/* Drawing section - positioned at y: 200vh */}
       <div 
-        className="relative w-full h-screen overflow-hidden"
+        className="absolute w-screen h-screen overflow-hidden"
         style={{ 
           backgroundColor: '#F1F1F1',
-          opacity: shouldSlideUp ? 1 : 0,
-          transition: 'opacity 0.6s ease-out',
+          left: 0,
+          top: '200vh',
           pointerEvents: shouldSlideUp ? 'auto' : 'none',
-          zIndex: shouldSlideUp ? 10 : 0,
         }}
       >
         {/* Grid background - 300vh x 300vh (100vh on each side) - dots don't scale */}
@@ -967,7 +1068,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
             height: '300vh',
             left: '-100vh',
             top: '-100vh',
-            transform: `translate(${offset.x}px, ${offset.y}px)`,
+            transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px)`,
             zIndex: 0,
           }}
         />
@@ -987,6 +1088,15 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           <div className="font-sans text-[12px] font-normal pointer-events-none mb-2" style={{ color: '#232323', lineHeight: '1.4', maxWidth: '300px' }}>
             Every day, everyone gets the same shape. Draw something from it, and submit and see what others made
           </div>
+          {onOpenShapeCreator && (
+            <button
+              onClick={onOpenShapeCreator}
+              className="font-sans text-[10px] underline cursor-pointer hover:opacity-70 transition-opacity text-left p-0 m-0 border-0 bg-transparent font-normal mt-2"
+              style={{ color: '#232323', opacity: 0.5 }}
+            >
+              Create Shape (Admin)
+            </button>
+          )}
         </div>
 
 
@@ -998,7 +1108,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
             height: '300vh',
             left: '-100vh',
             top: '-100vh',
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+            transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${zoom})`,
             transformOrigin: '0 0',
             cursor: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto',
             userSelect: 'none',
@@ -1008,11 +1118,11 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           onTouchEnd={handleTouchEnd}
           onWheel={handleWheel}
         >
-          {/* Shape canvas (base layer) - hidden for now */}
+          {/* Shape canvas (base layer) - displays default shape */}
           <canvas
             ref={shapeCanvasRef}
             className="absolute inset-0 pointer-events-none"
-            style={{ zIndex: 1, display: 'none' }}
+            style={{ zIndex: 1 }}
           />
           
           {/* Drawing canvas (interactive layer) - full size of container */}
@@ -1049,6 +1159,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           />
         </div>
       </div>
-    </>
+      </div>
+    </div>
   );
 }

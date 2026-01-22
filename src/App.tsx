@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { DrawingCanvas } from '@/components/DrawingCanvas';
 import { Gallery } from '@/components/Gallery';
+import { ShapeCreator } from '@/components/ShapeCreator';
 
 interface Submission {
   id: string;
@@ -11,7 +12,6 @@ interface Submission {
   y: number;
 }
 
-const DRAWING_SIZE = 800;
 const GRID_SPACING = 900; // Space between drawings (800px + 100px gap)
 const GRID_OFFSET_X = 200; // Starting X offset
 const GRID_OFFSET_Y = 200; // Starting Y offset
@@ -34,7 +34,7 @@ const calculateBoardPosition = (index: number, total: number): { x: number; y: n
 };
 
 export function App() {
-  const [mode, setMode] = useState<'drawing' | 'gallery'>('drawing');
+  const [mode, setMode] = useState<'drawing' | 'gallery' | 'shapeCreator'>('drawing');
   const [submissions, setSubmissions] = useState<Submission[]>([]);
 
   // Calculate positions for all submissions in board pattern
@@ -71,8 +71,21 @@ export function App() {
     setMode('drawing');
   };
 
+  const handleShapeSaved = () => {
+    // Shape is saved to localStorage in ShapeCreator, just go back to drawing
+    setMode('drawing');
+  };
+
+  const handleBackFromCreator = () => {
+    setMode('drawing');
+  };
+
+  if (mode === 'shapeCreator') {
+    return <ShapeCreator onSave={handleShapeSaved} onBack={handleBackFromCreator} />;
+  }
+
   if (mode === 'drawing') {
-    return <DrawingCanvas onSubmit={handleSubmit} existingSubmissions={submissionsWithPositions} />;
+    return <DrawingCanvas onSubmit={handleSubmit} existingSubmissions={submissionsWithPositions} onOpenShapeCreator={() => setMode('shapeCreator')} />;
   }
 
   return (
