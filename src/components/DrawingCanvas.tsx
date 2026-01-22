@@ -30,8 +30,12 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isKeyPressed, setIsKeyPressed] = useState(false); // Track if key is pressed for drawing
   const [offset, setOffset] = useState({ x: 0, y: 0 }); // Pan offset for infinite canvas
-  const lastTouchDistanceRef = useRef<number | null>(null); // For two-finger panning
+  const [zoom, setZoom] = useState(1); // Zoom level (1 = 100%)
+  const zoomRef = useRef(1); // Ref to track current zoom for gesture handlers
+  const offsetRef = useRef({ x: 0, y: 0 }); // Ref to track current offset for gesture handlers
+  const lastTouchDistanceRef = useRef<number | null>(null); // For two-finger panning/zooming
   const lastTouchCenterRef = useRef<Point | null>(null); // For two-finger panning
+  const lastGestureScaleRef = useRef<number>(1); // For trackpad gesture zoom
   const lastPointRef = useRef<Point | null>(null);
   const lastTimeRef = useRef<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,6 +51,10 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const MIN_STROKE_WIDTH = 6;
   const MAX_STROKE_WIDTH = 14;
   const STROKE_OPACITY = 0.8;
+  
+  // Zoom settings
+  const MIN_ZOOM = 0.1; // 10%
+  const MAX_ZOOM = 4; // 400%
   
   // Total number of shape images
   const TOTAL_SHAPES = 5;
@@ -89,11 +97,11 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     
     if (!ctx || !shapeCtx) return;
 
-    // Set canvas size to 200vh x 200vh (50vh on each side) with device pixel ratio support
+    // Set canvas size to 300vh x 300vh (100vh on each side) with device pixel ratio support
     const resizeCanvases = () => {
       const dpr = window.devicePixelRatio || 1;
       const viewportHeight = window.innerHeight;
-      const canvasSize = viewportHeight * 2; // 200vh = 2 * 100vh
+      const canvasSize = viewportHeight * 3; // 300vh = 3 * 100vh
       
       // Set actual size in memory (scaled for DPI)
       canvas.width = canvasSize * dpr;
@@ -177,6 +185,122 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     };
   }, []);
 
+  // Prevent browser zoom on ctrl/cmd+wheel and touch gestures (like Figma)
+  useEffect(() => {
+    if (!isDrawingEnabled) return;
+
+    const preventBrowserZoom = (e: WheelEvent | TouchEvent) => {
+      // Prevent browser zoom when ctrl/cmd is pressed - we handle zoom ourselves
+      if (e instanceof WheelEvent) {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      } else if (e instanceof TouchEvent) {
+        // Prevent pinch-to-zoom on touch devices
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }
+    };
+
+    const handleGestureStart = (e: Event) => {
+      if (!isDrawingEnabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const gestureEvent = e as any; // GestureEvent is not in standard types
+      if (gestureEvent.scale !== undefined) {
+        lastGestureScaleRef.current = gestureEvent.scale;
+      }
+    };
+
+    const handleGestureChange = (e: Event) => {
+      if (!isDrawingEnabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const gestureEvent = e as any; // GestureEvent is not in standard types
+      if (gestureEvent.scale === undefined) return;
+      
+      const currentScale = gestureEvent.scale;
+      const scaleDelta = currentScale / lastGestureScaleRef.current;
+      const currentZoom = zoomRef.current;
+      const currentOffset = offsetRef.current;
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * scaleDelta));
+      
+      // Get gesture center position (if available, otherwise use viewport center)
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const gestureX = gestureEvent.clientX !== undefined ? gestureEvent.clientX : viewportWidth / 2;
+      const gestureY = gestureEvent.clientY !== undefined ? gestureEvent.clientY : viewportHeight / 2;
+      
+      // Get the container element to calculate proper coordinates
+      // The container is the parent of the canvas
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const container = canvas.parentElement;
+      if (!container) return;
+      
+      const containerRect = container.getBoundingClientRect();
+      
+      // Calculate gesture position relative to container's current position
+      const mouseRelX = gestureX - containerRect.left;
+      const mouseRelY = gestureY - containerRect.top;
+      
+      // Calculate the point in canvas space (before zoom)
+      const canvasX = (mouseRelX - currentOffset.x) / currentZoom;
+      const canvasY = (mouseRelY - currentOffset.y) / currentZoom;
+      
+      // Adjust offset so that canvasPoint appears at the same screen position after zoom
+      const newOffsetX = mouseRelX - canvasX * newZoom;
+      const newOffsetY = mouseRelY - canvasY * newZoom;
+      
+      setZoom(newZoom);
+      setOffset({
+        x: newOffsetX,
+        y: newOffsetY,
+      });
+      
+      lastGestureScaleRef.current = currentScale;
+    };
+
+    const handleGestureEnd = (e: Event) => {
+      if (!isDrawingEnabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      lastGestureScaleRef.current = 1;
+    };
+
+    // Use passive: false to allow preventDefault
+    document.addEventListener('wheel', preventBrowserZoom as EventListener, { passive: false });
+    document.addEventListener('touchstart', preventBrowserZoom as EventListener, { passive: false });
+    document.addEventListener('touchmove', preventBrowserZoom as EventListener, { passive: false });
+    document.addEventListener('gesturestart', handleGestureStart, { passive: false });
+    document.addEventListener('gesturechange', handleGestureChange, { passive: false });
+    document.addEventListener('gestureend', handleGestureEnd, { passive: false });
+
+    return () => {
+      document.removeEventListener('wheel', preventBrowserZoom as EventListener);
+      document.removeEventListener('touchstart', preventBrowserZoom as EventListener);
+      document.removeEventListener('touchmove', preventBrowserZoom as EventListener);
+      document.removeEventListener('gesturestart', handleGestureStart);
+      document.removeEventListener('gesturechange', handleGestureChange);
+      document.removeEventListener('gestureend', handleGestureEnd);
+    };
+  }, [isDrawingEnabled]);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    offsetRef.current = offset;
+  }, [offset]);
+
   // Handle keyboard events for drawing mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -254,11 +378,10 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     if (!canvas) return { x: 0, y: 0 };
     
     const rect = canvas.getBoundingClientRect();
-    // Get position relative to canvas element (canvas is inside transformed container)
-    // The container has transform translate(offset.x, offset.y), so we need to account for that
-    // rect.left already accounts for the transform, so we just need canvas-relative position
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Get position relative to canvas element
+    // Account for zoom: divide by zoom to get correct canvas coordinates
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
     
     return {
       x,
@@ -331,8 +454,11 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     if (!isDrawingEnabled) return;
     
     if (e.touches.length === 2) {
-      // Two-finger panning
+      // Two-finger panning - prevent browser zoom
       e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.preventDefault();
+      e.nativeEvent.stopImmediatePropagation();
       setIsPanning(true);
       const distance = getTouchDistance(e.touches[0], e.touches[1]);
       const center = getTouchCenter(e.touches[0], e.touches[1]);
@@ -352,9 +478,10 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
+      // Account for zoom in touch coordinates
       const pos = {
-        x: touch.clientX - rect.left,
-        y: touch.clientY - rect.top,
+        x: (touch.clientX - rect.left) / zoom,
+        y: (touch.clientY - rect.top) / zoom,
       };
       
       const dpr = window.devicePixelRatio || 1;
@@ -380,17 +507,70 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     if (!isDrawingEnabled) return;
     
     if (e.touches.length === 2 && isPanning) {
-      // Two-finger panning
+      // Two-finger gesture - prevent browser navigation/zoom
       e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.preventDefault();
+      e.nativeEvent.stopImmediatePropagation();
+      
       const center = getTouchCenter(e.touches[0], e.touches[1]);
+      const distance = getTouchDistance(e.touches[0], e.touches[1]);
+      
+      // Check if this is a pinch zoom (distance changed significantly)
+      if (lastTouchDistanceRef.current !== null) {
+        const distanceDelta = distance - lastTouchDistanceRef.current;
+        const zoomDelta = distanceDelta / 100; // Adjust sensitivity
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + zoomDelta));
+        
+        if (Math.abs(distanceDelta) > 5) {
+          // Significant distance change = zoom towards center of pinch
+          // Get center point between two touches (in viewport coordinates)
+          const centerX = center.x;
+          const centerY = center.y;
+          
+          // Get the container element to calculate proper coordinates
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const container = canvas.parentElement;
+          if (!container) return;
+          
+          const containerRect = container.getBoundingClientRect();
+          
+          // Calculate center position relative to container's current position
+          const centerRelX = centerX - containerRect.left;
+          const centerRelY = centerY - containerRect.top;
+          
+          // Calculate the center position in canvas space (before zoom)
+          // canvasPoint = (centerPos - offset) / currentZoom
+          const canvasX = (centerRelX - offset.x) / zoom;
+          const canvasY = (centerRelY - offset.y) / zoom;
+          
+          // Adjust offset so that canvasPoint appears at the same screen position after zoom
+          // newOffset = centerPos - (canvasPoint * newZoom)
+          const newOffsetX = centerRelX - canvasX * newZoom;
+          const newOffsetY = centerRelY - canvasY * newZoom;
+          
+          setZoom(newZoom);
+          setOffset({
+            x: newOffsetX,
+            y: newOffsetY,
+          });
+          lastTouchDistanceRef.current = distance;
+          return;
+        }
+      }
+      
+      // Otherwise, pan the canvas
       const viewportHeight = window.innerHeight;
-      const maxOffset = viewportHeight * 0.5; // 50vh
-      const minOffset = -viewportHeight * 0.5; // -50vh
+      const maxOffset = viewportHeight * 1; // 100vh
+      const minOffset = -viewportHeight * 1; // -100vh
       
       setOffset({
         x: Math.max(minOffset, Math.min(maxOffset, center.x - panStart.x)),
         y: Math.max(minOffset, Math.min(maxOffset, center.y - panStart.y)),
       });
+      
+      lastTouchDistanceRef.current = distance;
     } else if (e.touches.length === 1 && isDrawing) {
       // Single touch = drawing
       const canvas = canvasRef.current;
@@ -401,9 +581,10 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
+      // Account for zoom in touch coordinates
       const pos = {
-        x: touch.clientX - rect.left,
-        y: touch.clientY - rect.top,
+        x: (touch.clientX - rect.left) / zoom,
+        y: (touch.clientY - rect.top) / zoom,
       };
       
       if (lastPointRef.current) {
@@ -452,20 +633,65 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     lastTimeRef.current = 0;
   };
 
-  // Handle wheel events for trackpad two-finger panning
+  // Handle wheel events for trackpad two-finger panning and zoom
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (!isDrawingEnabled) return;
     
-    // Check if this is a trackpad pan gesture (not a zoom)
-    // Trackpad panning typically has ctrlKey or metaKey for zoom, so if those aren't pressed, it's panning
-    if (!e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
+    // Always prevent default to stop browser zoom and navigation
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Additional prevention for zoom gestures
+    if (e.ctrlKey || e.metaKey) {
+      e.nativeEvent.preventDefault();
+      e.nativeEvent.stopImmediatePropagation();
+    }
+    
+    // Check if ctrl/cmd is pressed for zoom (trackpad pinch or cmd+scroll)
+    if (e.ctrlKey || e.metaKey) {
+      // For trackpad pinch, deltaY is the zoom amount
+      // Use a more sensitive zoom calculation that responds to deltaY directly
+      // Negative deltaY = zoom in, positive deltaY = zoom out
+      const zoomSensitivity = 0.001; // Adjust for smooth trackpad zoom
+      const zoomDelta = -e.deltaY * zoomSensitivity; // Invert: negative delta = zoom in
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + zoomDelta));
       
-      // Update offset based on wheel delta (trackpad panning)
-      // Limit panning to keep canvas within bounds (50vh on each side)
+      // Get mouse position relative to viewport
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+      
+      // Get the container element to calculate proper coordinates
+      // The container is the element that the wheel event is attached to
+      const container = e.currentTarget;
+      const containerRect = container.getBoundingClientRect();
+      
+      // Calculate mouse position relative to container's current position
+      // getBoundingClientRect() already accounts for the CSS transform (translate + scale)
+      const mouseRelX = mouseX - containerRect.left;
+      const mouseRelY = mouseY - containerRect.top;
+      
+      // Calculate the point in canvas space (before zoom)
+      // canvasPoint = (mousePos - offset) / currentZoom
+      // But we need to account for the container's base position
+      const canvasX = (mouseRelX - offset.x) / zoom;
+      const canvasY = (mouseRelY - offset.y) / zoom;
+      
+      // Adjust offset so that canvasPoint appears at the same screen position after zoom
+      // newOffset = mousePos - (canvasPoint * newZoom)
+      const newOffsetX = mouseRelX - canvasX * newZoom;
+      const newOffsetY = mouseRelY - canvasY * newZoom;
+      
+      setZoom(newZoom);
+      setOffset({
+        x: newOffsetX,
+        y: newOffsetY,
+      });
+    } else {
+      // Pan the canvas (no modifier key)
+      // Limit panning to keep canvas within bounds (100vh on each side)
       const viewportHeight = window.innerHeight;
-      const maxOffset = viewportHeight * 0.5; // 50vh
-      const minOffset = -viewportHeight * 0.5; // -50vh
+      const maxOffset = viewportHeight * 1; // 100vh
+      const minOffset = -viewportHeight * 1; // -100vh
       
       setOffset(prev => ({
         x: Math.max(minOffset, Math.min(maxOffset, prev.x - e.deltaX)),
@@ -731,20 +957,27 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           zIndex: shouldSlideUp ? 10 : 0,
         }}
       >
-        {/* Grid background - 200vh x 200vh (50vh on each side) */}
+        {/* Grid background - 300vh x 300vh (100vh on each side) - dots don't scale */}
         <div
           className="absolute pointer-events-none"
           style={{
             backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
             backgroundSize: '24px 24px',
-            width: '200vh',
-            height: '200vh',
-            left: '-50vh',
-            top: '-50vh',
+            width: '300vh',
+            height: '300vh',
+            left: '-100vh',
+            top: '-100vh',
             transform: `translate(${offset.x}px, ${offset.y}px)`,
             zIndex: 0,
           }}
         />
+
+        {/* Zoom level indicator */}
+        <div className="absolute top-16 right-12 z-20 pointer-events-none">
+          <div className="font-sans text-[12px] font-normal" style={{ color: '#232323' }}>
+            {Math.round(zoom * 100)}%
+          </div>
+        </div>
 
         {/* Rules in bottom left */}
         <div className="absolute bottom-16 left-12 z-20">
@@ -752,30 +985,21 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
             Vibeform
           </div>
           <div className="font-sans text-[12px] font-normal pointer-events-none mb-2" style={{ color: '#232323', lineHeight: '1.4', maxWidth: '300px' }}>
-            Every day, everyone gets the same shape. Draw something from it, then explore what others created. Same starting point, infinite interpretations.
-          </div>
-          <div className="font-sans text-[12px] font-normal pointer-events-none" style={{ color: '#232323', lineHeight: '1.3' }}>
-            <button
-              onClick={handleSubmit}
-              className="underline cursor-pointer hover:opacity-70 transition-opacity text-left p-0 m-0 border-0 bg-transparent font-normal"
-              style={{ color: '#232323' }}
-            >
-              Submit
-            </button>
-            {' '}to see what others made
+            Every day, everyone gets the same shape. Draw something from it, and submit and see what others made
           </div>
         </div>
 
 
-        {/* Canvas container with transform - 200vh x 200vh (50vh on each side) */}
+        {/* Canvas container with transform - 300vh x 300vh (100vh on each side) */}
         <div
           className="absolute"
           style={{
-            width: '200vh',
-            height: '200vh',
-            left: '-50vh',
-            top: '-50vh',
-            transform: `translate(${offset.x}px, ${offset.y}px)`,
+            width: '300vh',
+            height: '300vh',
+            left: '-100vh',
+            top: '-100vh',
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
             cursor: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto',
             userSelect: 'none',
           }}
