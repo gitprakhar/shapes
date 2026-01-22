@@ -17,12 +17,11 @@ interface Submission {
 interface DrawingCanvasProps {
   onSubmit: (imageData: string, note: string) => void;
   existingSubmissions?: Submission[];
-  onOpenShapeCreator?: () => void;
 }
 
 // Simple crayon drawing - no sticky notes
 
-export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeCreator }: DrawingCanvasProps) {
+export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shapeCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -30,9 +29,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeC
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isKeyPressed, setIsKeyPressed] = useState(false); // Track if key is pressed for drawing
-  const [offset, setOffset] = useState({ x: 0, y: 0 }); // Pan offset for page navigation (homepage <-> drawing area)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
-  const [isTransitioning, setIsTransitioning] = useState(false); // Track if transitioning between pages
   const [zoom, setZoom] = useState(1); // Zoom level (1 = 100%)
   const zoomRef = useRef(1); // Ref to track current zoom for gesture handlers
   const offsetRef = useRef({ x: 0, y: 0 }); // Ref to track current canvasOffset for gesture handlers
@@ -43,10 +40,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeC
   const lastTimeRef = useRef<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const drawingPathsRef = useRef<Array<{ points: Point[], strokeWidth: number }>>([]); // Store drawing paths for redraw
-  const [currentShapeIndex, setCurrentShapeIndex] = useState(0);
-  const [shouldSlideUp, setShouldSlideUp] = useState(false);
-  const [isDrawingEnabled, setIsDrawingEnabled] = useState(false);
-  const shapeIntervalRef = useRef<number | null>(null);
+  const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Always enabled on drawing page
   const strokeImageRef = useRef<HTMLImageElement | null>(null);
   
   // Marker/crayon settings
@@ -59,8 +53,6 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeC
   const MIN_ZOOM = 0.1; // 10%
   const MAX_ZOOM = 4; // 400%
   
-  // Total number of shape images
-  const TOTAL_SHAPES = 5;
 
   // Generate a random polygon
   const generateRandomPolygon = (centerX: number, centerY: number, radius: number): Point[] => {
@@ -231,16 +223,8 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeC
     };
     strokeImg.src = '/stroke/stroke-vector.svg';
 
-    // Cycle through shape images in a loop
-    shapeIntervalRef.current = setInterval(() => {
-      setCurrentShapeIndex((prev) => (prev + 1) % TOTAL_SHAPES);
-    }, 600); // Change image every 0.6 seconds
-
     return () => {
       window.removeEventListener('resize', resizeCanvases);
-      if (shapeIntervalRef.current) {
-        clearInterval(shapeIntervalRef.current);
-      }
     };
   }, []);
 
@@ -942,120 +926,13 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeC
 
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ backgroundColor: '#F1F1F1' }}>
-      {/* Single infinite canvas container - 400vh tall (200vh for homepage + 200vh for drawing) */}
-      <div
-        className="absolute"
-        style={{
-          width: '100vh',
-          height: '400vh',
-          left: 0,
-          top: 0,
-          transform: `translate(${offset.x}px, ${offset.y}px)`,
-          transition: isTransitioning ? 'none' : 'transform 0.1s ease-out',
-          willChange: isTransitioning ? 'transform' : 'auto',
-        }}
-      >
-        {/* Homepage section - positioned at y: 0 */}
-        <div 
-          className="absolute w-screen h-screen"
-          style={{ 
-            backgroundColor: '#F1F1F1',
-            left: 0,
-            top: 0,
-            pointerEvents: shouldSlideUp ? 'none' : 'auto',
-          }}
-        >
-        {/* Grid dots background on homepage */}
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-            width: '100%',
-            height: '100%',
-            zIndex: 0,
-          }}
-        />
-
-        {/* Shape image behind text - cycling through images */}
-        <div className="absolute inset-0 flex items-center justify-center z-0 pointer-events-none overflow-visible">
-          <img
-            src={`/shapes/shape${currentShapeIndex + 1}.png`}
-            alt="Shape"
-            className="object-contain opacity-100 transition-opacity duration-500"
-            style={{ width: '100vw', height: '100vh', transform: 'translateY(-5%)' }}
-          />
-        </div>
-
-                      {/* Large centered text in EB Garamond */}
-                      <div className="absolute inset-0 flex items-center justify-center z-1 pointer-events-none">
-                        <div className="font-serif text-[130px] font-normal leading-none tracking-tight text-center max-w-5xl px-12" style={{ color: '#232323' }}>
-                        The constraint is the point.
-                        </div>
-                      </div>
-
-        {/* Enter Vibeform link at bottom */}
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10">
-          <a 
-            href="#" 
-            className="font-sans text-[12px] underline cursor-pointer hover:opacity-70 transition-opacity"
-            style={{ color: '#232323' }}
-            onClick={(e) => {
-              e.preventDefault();
-              // Stop the image cycling
-              if (shapeIntervalRef.current) {
-                clearInterval(shapeIntervalRef.current);
-                shapeIntervalRef.current = null;
-              }
-              setIsDrawingEnabled(true);
-              setIsTransitioning(true);
-              
-              // Animate offset to pan to drawing area (200vh upwards)
-              // Drawing area is positioned at top: '200vh', so we need to pan by -200vh
-              const viewportHeight = window.innerHeight;
-              const targetOffsetY = -viewportHeight * 2; // -200vh (200vh in pixels)
-              
-              // Smooth transition over 800ms
-              const startTime = Date.now();
-              const duration = 800;
-              const startOffsetY = offset.y;
-              
-              const animate = () => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                
-                // Use cubic-bezier easing (0.4, 0, 0.2, 1) - ease-in-out
-                const ease = progress < 0.5
-                  ? 2 * progress * progress
-                  : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-                
-                const currentOffsetY = startOffsetY + (targetOffsetY - startOffsetY) * ease;
-                setOffset({ x: 0, y: currentOffsetY });
-                
-                if (progress < 1) {
-                  requestAnimationFrame(animate);
-                } else {
-                  setIsTransitioning(false);
-                  setShouldSlideUp(true);
-                }
-              };
-              
-              requestAnimationFrame(animate);
-            }}
-          >
-            Start Today's Challenge
-          </a>
-        </div>
-      </div>
-
-      {/* Drawing section - positioned at y: 200vh */}
+      {/* Drawing section */}
       <div 
         className="absolute w-screen h-screen overflow-hidden"
         style={{ 
           backgroundColor: '#F1F1F1',
           left: 0,
-          top: '200vh',
-          pointerEvents: shouldSlideUp ? 'auto' : 'none',
+          top: 0,
         }}
       >
         {/* Grid background - 300vh x 300vh (100vh on each side) - dots don't scale */}
@@ -1073,30 +950,22 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeC
           }}
         />
 
-        {/* Zoom level indicator */}
-        <div className="absolute top-16 right-12 z-20 pointer-events-none">
-          <div className="font-sans text-[12px] font-normal" style={{ color: '#232323' }}>
-            {Math.round(zoom * 100)}%
-          </div>
-        </div>
-
         {/* Rules in bottom left */}
         <div className="absolute bottom-16 left-12 z-20">
-          <div className="font-sans text-[24px] font-normal mb-1 pointer-events-none" style={{ color: '#232323' }}>
-            Vibeform
+          <div className="font-sans text-[28px] font-normal mb-1 pointer-events-none" style={{ color: '#232323' }}>
+            The constraint
           </div>
-          <div className="font-sans text-[12px] font-normal pointer-events-none mb-2" style={{ color: '#232323', lineHeight: '1.4', maxWidth: '300px' }}>
+          <div className="font-sans text-[14px] font-normal pointer-events-none mb-2" style={{ color: '#232323', lineHeight: '1.4', maxWidth: '300px' }}>
             Every day, everyone gets the same shape. Draw something from it, and submit and see what others made
           </div>
-          {onOpenShapeCreator && (
-            <button
-              onClick={onOpenShapeCreator}
-              className="font-sans text-[10px] underline cursor-pointer hover:opacity-70 transition-opacity text-left p-0 m-0 border-0 bg-transparent font-normal mt-2"
-              style={{ color: '#232323', opacity: 0.5 }}
-            >
-              Create Shape (Admin)
-            </button>
-          )}
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="font-sans text-[14px] underline cursor-pointer hover:opacity-70 transition-opacity text-left pt-4 m-0 border-0 bg-transparent font-normal mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ color: '#232323' }}
+          >
+            {isSubmitting ? 'Submitting...' : 'Submit'}
+          </button>
         </div>
 
 
@@ -1158,7 +1027,6 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [], onOpenShapeC
             onContextMenu={(e) => e.preventDefault()} // Prevent context menu on right click
           />
         </div>
-      </div>
       </div>
     </div>
   );

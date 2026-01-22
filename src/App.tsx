@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { Homepage } from '@/components/Homepage';
 import { DrawingCanvas } from '@/components/DrawingCanvas';
 import { Gallery } from '@/components/Gallery';
 import { ShapeCreator } from '@/components/ShapeCreator';
@@ -33,9 +35,9 @@ const calculateBoardPosition = (index: number, total: number): { x: number; y: n
   };
 };
 
-export function App() {
-  const [mode, setMode] = useState<'drawing' | 'gallery' | 'shapeCreator'>('drawing');
+function AppContent() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const navigate = useNavigate();
 
   // Calculate positions for all submissions in board pattern
   const submissionsWithPositions = useMemo(() => {
@@ -60,7 +62,7 @@ export function App() {
     };
     
     setSubmissions((prev) => [...prev, newSubmission]);
-    setMode('gallery');
+    navigate('/gallery');
   };
 
   const handleAddSubmission = (submission: Submission) => {
@@ -68,32 +70,51 @@ export function App() {
   };
 
   const handleNewDrawing = () => {
-    setMode('drawing');
+    navigate('/draw');
   };
 
   const handleShapeSaved = () => {
-    // Shape is saved to localStorage in ShapeCreator, just go back to drawing
-    setMode('drawing');
+    // Shape is saved to localStorage in ShapeCreator, navigate back to home
+    navigate('/');
   };
 
   const handleBackFromCreator = () => {
-    setMode('drawing');
+    navigate('/');
   };
 
-  if (mode === 'shapeCreator') {
-    return <ShapeCreator onSave={handleShapeSaved} onBack={handleBackFromCreator} />;
-  }
-
-  if (mode === 'drawing') {
-    return <DrawingCanvas onSubmit={handleSubmit} existingSubmissions={submissionsWithPositions} onOpenShapeCreator={() => setMode('shapeCreator')} />;
-  }
-
   return (
-    <Gallery 
-      submissions={submissionsWithPositions} 
-      onAddSubmission={handleAddSubmission}
-      onNewDrawing={handleNewDrawing}
-    />
+    <Routes>
+      <Route 
+        path="/" 
+        element={<Homepage />} 
+      />
+      <Route 
+        path="/draw" 
+        element={<DrawingCanvas onSubmit={handleSubmit} existingSubmissions={submissionsWithPositions} />} 
+      />
+      <Route 
+        path="/create-shape" 
+        element={<ShapeCreator onSave={handleShapeSaved} onBack={handleBackFromCreator} />} 
+      />
+      <Route 
+        path="/gallery" 
+        element={
+          <Gallery 
+            submissions={submissionsWithPositions} 
+            onAddSubmission={handleAddSubmission}
+            onNewDrawing={handleNewDrawing}
+          />
+        } 
+      />
+    </Routes>
+  );
+}
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   );
 }
 
