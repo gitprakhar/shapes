@@ -953,16 +953,16 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
         {/* Rules in bottom left */}
         <div className="absolute bottom-16 left-12 z-20">
           <div className="font-sans text-[28px] font-normal mb-1 pointer-events-none" style={{ color: '#232323' }}>
-            The constraint
+            Draw and share
           </div>
           <div className="font-sans text-[14px] font-normal pointer-events-none mb-2" style={{ color: '#232323', lineHeight: '1.4', maxWidth: '300px' }}>
-            Every day, everyone gets the same shape. Draw something from it, and submit and see what others made
+            Every day, everyone gets the same shape. <br></br>Draw something from it, submit it, <br></br>and see what others made
           </div>
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="font-sans text-[14px] underline cursor-pointer hover:opacity-70 transition-opacity text-left pt-4 m-0 border-0 bg-transparent font-normal mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ color: '#232323' }}
+            className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left pt-4 m-0 border-0 bg-transparent font-normal mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
           >
             {isSubmitting ? 'Submitting...' : 'Submit'}
           </button>
