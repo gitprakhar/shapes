@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 export function Homepage() {
   const navigate = useNavigate();
@@ -64,23 +65,30 @@ export function Homepage() {
               src={`/shapes/shape${currentShapeIndex + 1}.png`}
               alt="Shape"
               className="object-contain opacity-100 transition-opacity duration-500"
-              style={{ width: '100vw', height: '100vh', transform: 'translateY(-5%)' }}
+              style={{ width: '100vw', height: '100vh', transform: 'translateY(0%)' }}
             />
           </div>
 
           {/* Large centered text in EB Garamond */}
-          <div className="absolute inset-0 flex items-center justify-center z-1 pointer-events-none">
-            <div className="font-serif text-[130px] font-normal leading-none tracking-tight text-center max-w-4xl px-12" style={{ color: '#232323' }}>
-              Make<em> almost* </em>anything.
+          <div className="absolute inset-0 flex items-center justify-center z-1">
+            <div className="text-center max-w-4xl px-12" style={{ color: '#232323' }}>
+              <div className="font-serif text-[120px] font-normal leading-none tracking-tight pointer-events-none">
+                Draw anything*
+              </div>
+              <div 
+                className="font-sans text-[16px] block mt-6 pointer-events-none"
+                style={{ color: '#232323' }}
+              >
+                *with today's shape
+              </div>
             </div>
           </div>
 
-          {/* Enter Constraint link at bottom */}
+          {/* Primary button at bottom */}
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10">
-            <a 
-              href="#" 
-              className="font-sans text-[16px] cursor-pointer hover:opacity-70 transition-opacity"
-              style={{ color: '#232323' }}
+            <Button
+              variant="secondary"
+              size="lg"
               onClick={(e) => {
                 e.preventDefault();
                 // Stop the image cycling
@@ -123,8 +131,8 @@ export function Homepage() {
                 requestAnimationFrame(animate);
               }}
             >
-              *as long as it starts with <span className="underline">today's shape</span>
-            </a>
+              Start Drawing
+            </Button>
           </div>
         </div>
       </div>
