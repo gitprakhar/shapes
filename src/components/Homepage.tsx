@@ -70,8 +70,8 @@ export function Homepage() {
 
           {/* Large centered text in EB Garamond */}
           <div className="absolute inset-0 flex items-center justify-center z-1 pointer-events-none">
-            <div className="font-serif text-[120px] font-normal leading-none tracking-tight text-center max-w-5xl px-12" style={{ color: '#232323' }}>
-              What you make is <br /><em>almost up to you.</em>
+            <div className="font-serif text-[130px] font-normal leading-none tracking-tight text-center max-w-4xl px-12" style={{ color: '#232323' }}>
+              Make<em> almost* </em>anything.
             </div>
           </div>
 
@@ -79,7 +79,7 @@ export function Homepage() {
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10">
             <a 
               href="#" 
-              className="font-sans text-[14px] underline cursor-pointer hover:opacity-70 transition-opacity"
+              className="font-sans text-[16px] cursor-pointer hover:opacity-70 transition-opacity"
               style={{ color: '#232323' }}
               onClick={(e) => {
                 e.preventDefault();
@@ -123,7 +123,7 @@ export function Homepage() {
                 requestAnimationFrame(animate);
               }}
             >
-              Today's Challenge
+              *as long as it starts with <span className="underline">today's shape</span>
             </a>
           </div>
         </div>

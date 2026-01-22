@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 
 const DRAWING_SIZE = 800; // Size for drawings in gallery
+const SUBMISSIONS_STORAGE_KEY = 'drawingSubmissions';
+const GAP = 40; // Gap between drawings
 
 interface Submission {
   id: string;
@@ -18,17 +19,37 @@ interface GalleryProps {
   onNewDrawing: () => void;
 }
 
-export function Gallery({ submissions, onAddSubmission, onNewDrawing }: GalleryProps) {
+export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
+
+  // Load all submissions from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setAllSubmissions(parsed);
+      }
+    } catch (error) {
+      console.error('Failed to load submissions from localStorage:', error);
+    }
+  }, []);
+
+  // Update when propSubmissions change (new submission added)
+  useEffect(() => {
+    if (propSubmissions.length > 0) {
+      setAllSubmissions(propSubmissions);
+    }
+  }, [propSubmissions]);
 
   // Handle panning
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Only pan if clicking on background, not on a card
-    const target = e.target as HTMLElement;
-    if (e.button === 0 && !target.closest('.sticky-note-card')) {
+    if (e.button === 0) {
       setIsPanning(true);
       setPanStart({
         x: e.clientX - offset.x,
@@ -51,24 +72,67 @@ export function Gallery({ submissions, onAddSubmission, onNewDrawing }: GalleryP
     setIsPanning(false);
   };
 
-  // Calculate initial offset to center the board on first load
+  // Calculate canvas dimensions based on number of submissions
+  const canvasWidth = allSubmissions.length > 0 
+    ? allSubmissions.length * DRAWING_SIZE + (allSubmissions.length - 1) * GAP
+    : DRAWING_SIZE;
+  const canvasHeight = DRAWING_SIZE;
+
+  // Draw all submissions on canvas
   useEffect(() => {
-    if (submissions.length > 0 && offset.x === 0 && offset.y === 0) {
-      // Find the bounds of all submissions
-      const minX = Math.min(...submissions.map(s => s.x));
-      const minY = Math.min(...submissions.map(s => s.y));
-      const maxX = Math.max(...submissions.map(s => s.x + DRAWING_SIZE));
-      const maxY = Math.max(...submissions.map(s => s.y + DRAWING_SIZE));
-      
-      // Center the board in viewport
-      const boardWidth = maxX - minX;
-      const boardHeight = maxY - minY;
-      const centerX = (window.innerWidth - boardWidth) / 2 - minX;
-      const centerY = (window.innerHeight - boardHeight) / 2 - minY;
-      
+    const canvas = canvasRef.current;
+    if (!canvas || allSubmissions.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set up canvas with device pixel ratio
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvasWidth * dpr;
+    canvas.height = canvasHeight * dpr;
+    ctx.scale(dpr, dpr);
+    canvas.style.width = `${canvasWidth}px`;
+    canvas.style.height = `${canvasHeight}px`;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+    // Starting position (drawings start at x: 0, centered vertically)
+    const startX = 0;
+    const startY = 0;
+
+    // Load and draw each submission
+    let loadedCount = 0;
+    const images: HTMLImageElement[] = [];
+
+    allSubmissions.forEach((submission) => {
+      const img = new Image();
+      img.onload = () => {
+        loadedCount++;
+        if (loadedCount === allSubmissions.length) {
+          // All images loaded, redraw canvas
+          ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+          images.forEach((image, imgIndex) => {
+            const x = startX + imgIndex * (DRAWING_SIZE + GAP);
+            ctx.drawImage(image, x, startY, DRAWING_SIZE, DRAWING_SIZE);
+          });
+        }
+      };
+      img.onerror = () => {
+        console.error('Failed to load submission image:', submission.id);
+        loadedCount++;
+      };
+      img.src = submission.imageData;
+      images.push(img);
+    });
+
+    // Center the canvas in the viewport
+    if (allSubmissions.length > 0 && offset.x === 0 && offset.y === 0) {
+      const centerX = (window.innerWidth - canvasWidth) / 2;
+      const centerY = (window.innerHeight - canvasHeight) / 2;
       setOffset({ x: centerX, y: centerY });
     }
-  }, [submissions.length]);
+  }, [allSubmissions, canvasWidth, canvasHeight]);
 
   return (
     <div
@@ -76,7 +140,7 @@ export function Gallery({ submissions, onAddSubmission, onNewDrawing }: GalleryP
       className="gallery-container relative w-full h-screen overflow-hidden"
       style={{
         cursor: isPanning ? 'grabbing' : 'grab',
-        backgroundColor: '#fafbfc',
+        backgroundColor: '#F1F1F1',
         userSelect: 'none',
       }}
       onMouseDown={handleMouseDown}
@@ -84,93 +148,23 @@ export function Gallery({ submissions, onAddSubmission, onNewDrawing }: GalleryP
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* Dot grid background - infinite canvas - more subtle */}
+      {/* Dot grid background */}
       <div
-        className="absolute"
+        className="absolute inset-0"
         style={{
-          backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.03) 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
           backgroundSize: '24px 24px',
-          width: '500%',
-          height: '500%',
-          left: '-200%',
-          top: '-200%',
-          transform: `translate(${offset.x}px, ${offset.y}px)`,
         }}
       />
       
-      {/* Description in top left - modern typography */}
-      <div className="absolute top-12 left-12 z-20 pointer-events-none">
-        <div className="font-sans text-[13px] text-gray-600 leading-relaxed tracking-tight">
-          <div className="font-semibold text-gray-900 mb-1">Shape of the Day</div>
-          <div className="text-gray-500">Pan around to explore submissions</div>
-        </div>
-      </div>
-      
-      {/* Submissions */}
-      <div
+      {/* Canvas with all submitted drawings - sized to fit the drawings */}
+      <canvas
+        ref={canvasRef}
         className="absolute"
         style={{
-          width: '100%',
-          height: '100%',
+          left: 0,
+          top: 0,
           transform: `translate(${offset.x}px, ${offset.y}px)`,
-        }}
-      >
-        {submissions.map((submission) => (
-          <DrawingCard key={submission.id} submission={submission} />
-        ))}
-      </div>
-      
-      {/* New Drawing button - modern styling */}
-      <div className="absolute top-12 right-12 z-20">
-        <Button 
-          onClick={onNewDrawing} 
-          size="lg"
-          className="shadow-lg hover:shadow-xl transition-all"
-        >
-          New Drawing
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-interface DrawingCardProps {
-  submission: Submission;
-}
-
-function DrawingCard({ submission }: DrawingCardProps) {
-  const [rotation] = useState(() => (Math.random() - 0.5) * 3); // Random rotation
-
-  return (
-    <div
-      className="drawing-card absolute pointer-events-auto"
-      style={{
-        left: `${submission.x}px`,
-        top: `${submission.y}px`,
-        width: `${DRAWING_SIZE}px`,
-        height: `${DRAWING_SIZE}px`,
-        transform: `rotate(${rotation}deg)`,
-        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = `rotate(0deg) scale(1.05)`;
-        e.currentTarget.style.zIndex = '10';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = `rotate(${rotation}deg) scale(1)`;
-        e.currentTarget.style.zIndex = '1';
-      }}
-      onMouseDown={(e) => {
-        e.stopPropagation(); // Prevent panning when clicking on card
-      }}
-    >
-      {/* Drawing image - simple, no container */}
-      <img
-        src={submission.imageData}
-        alt="Drawing"
-        className="w-full h-full object-contain"
-        style={{
-          filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))',
         }}
       />
     </div>

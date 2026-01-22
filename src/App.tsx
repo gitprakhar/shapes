@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { Homepage } from '@/components/Homepage';
 import { DrawingCanvas } from '@/components/DrawingCanvas';
@@ -13,6 +13,8 @@ interface Submission {
   x: number;
   y: number;
 }
+
+const SUBMISSIONS_STORAGE_KEY = 'drawingSubmissions';
 
 const GRID_SPACING = 900; // Space between drawings (800px + 100px gap)
 const GRID_OFFSET_X = 200; // Starting X offset
@@ -36,8 +38,25 @@ const calculateBoardPosition = (index: number, total: number): { x: number; y: n
 };
 
 function AppContent() {
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  // Load submissions from localStorage on mount
+  const [submissions, setSubmissions] = useState<Submission[]>(() => {
+    try {
+      const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const navigate = useNavigate();
+
+  // Save submissions to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(submissions));
+    } catch (error) {
+      console.error('Failed to save submissions to localStorage:', error);
+    }
+  }, [submissions]);
 
   // Calculate positions for all submissions in board pattern
   const submissionsWithPositions = useMemo(() => {
