@@ -5,9 +5,21 @@ import { DrawingCanvas } from '@/components/DrawingCanvas';
 import { Gallery } from '@/components/Gallery';
 import { ShapeCreator } from '@/components/ShapeCreator';
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface DrawingPath {
+  points: Point[];
+  strokeWidth: number;
+}
+
 interface Submission {
   id: string;
-  imageData: string;
+  imageData?: string;
+  drawingPaths?: DrawingPath[];
+  svgString?: string; // Full SVG combining shape + drawing
   author: string;
   note: string;
   x: number;
@@ -70,10 +82,12 @@ function AppContent() {
     });
   }, [submissions]);
 
-  const handleSubmit = (imageData: string, note: string) => {
+  const handleSubmit = (imageData: string, note: string, drawingPaths?: DrawingPath[], svgString?: string) => {
     const newSubmission: Submission = {
       id: Date.now().toString(),
-      imageData,
+      imageData, // Keep for backward compatibility
+      drawingPaths, // Keep for backward compatibility
+      svgString, // Full SVG combining shape + drawing
       author: 'Prakhar', // Could be made dynamic later
       note,
       x: 0, // Will be calculated by board position

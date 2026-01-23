@@ -1,12 +1,14 @@
 import { useRef, useState, useEffect } from 'react';
 
-const DRAWING_SIZE = 800; // Size for drawings in gallery
 const SUBMISSIONS_STORAGE_KEY = 'drawingSubmissions';
 const GAP = 40; // Gap between drawings
+const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing (much smaller than full canvas)
 
 interface Submission {
   id: string;
-  imageData: string;
+  imageData?: string;
+  drawingPaths?: any[];
+  svgString?: string;
   author: string;
   note: string;
   x: number;
@@ -21,23 +23,90 @@ interface GalleryProps {
 
 export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
 
-  // Load all submissions from localStorage on mount
+  // Load all submissions from Supabase on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setAllSubmissions(parsed);
+    const loadSubmissions = async () => {
+      try {
+        const { supabase } = await import('@/lib/supabase');
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Get today's daily_shape_id
+        const { data: dailyShape, error: shapeError } = await supabase
+          .from('daily_shapes')
+          .select('id')
+          .eq('date', today)
+          .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
+        
+        if (shapeError) {
+          console.error('Error fetching daily shape:', shapeError);
+          console.error('Shape error details:', JSON.stringify(shapeError, null, 2));
+          // Fallback to localStorage
+          const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            setAllSubmissions(parsed);
+          }
+          return;
+        }
+        
+        if (!dailyShape) {
+          console.warn('No daily shape found for today');
+          // Fallback to localStorage
+          const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            setAllSubmissions(parsed);
+          }
+          return;
+        }
+        
+        // Load all drawings for today's shape
+        const { data: drawings, error: drawingsError } = await supabase
+          .from('user_drawings')
+          .select('*')
+          .eq('daily_shape_id', dailyShape.id)
+          .order('created_at', { ascending: true });
+        
+        if (drawingsError) {
+          console.error('Error loading drawings:', drawingsError);
+          console.error('Drawings error details:', JSON.stringify(drawingsError, null, 2));
+          throw drawingsError;
+        }
+        
+        // Convert Supabase format to Submission format
+        const submissions: Submission[] = (drawings || []).map((drawing) => ({
+          id: drawing.id,
+          svgString: drawing.drawing_paths?.svgString,
+          imageData: drawing.drawing_paths?.imageData,
+          drawingPaths: drawing.drawing_paths?.drawingPaths,
+          author: 'User', // Could be enhanced with user auth later
+          note: '',
+          x: 0,
+          y: 0,
+        }));
+        
+        setAllSubmissions(submissions);
+      } catch (error) {
+        console.error('Failed to load submissions from Supabase:', error);
+        // Fallback to localStorage
+        try {
+          const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            setAllSubmissions(parsed);
+          }
+        } catch (localError) {
+          console.error('Failed to load from localStorage:', localError);
+        }
       }
-    } catch (error) {
-      console.error('Failed to load submissions from localStorage:', error);
-    }
+    };
+    
+    loadSubmissions();
   }, []);
 
   // Update when propSubmissions change (new submission added)
@@ -72,67 +141,20 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     setIsPanning(false);
   };
 
-  // Calculate canvas dimensions based on number of submissions
-  const canvasWidth = allSubmissions.length > 0 
-    ? allSubmissions.length * DRAWING_SIZE + (allSubmissions.length - 1) * GAP
-    : DRAWING_SIZE;
-  const canvasHeight = DRAWING_SIZE;
+  // Calculate total width needed - canvas grows with number of submissions
+  const totalWidth = allSubmissions.length > 0
+    ? allSubmissions.length * DRAWING_DISPLAY_SIZE + (allSubmissions.length - 1) * GAP
+    : DRAWING_DISPLAY_SIZE;
+  const totalHeight = DRAWING_DISPLAY_SIZE;
 
-  // Draw all submissions on canvas
+  // Initialize offset to center the canvas in viewport
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || allSubmissions.length === 0) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Set up canvas with device pixel ratio
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = canvasWidth * dpr;
-    canvas.height = canvasHeight * dpr;
-    ctx.scale(dpr, dpr);
-    canvas.style.width = `${canvasWidth}px`;
-    canvas.style.height = `${canvasHeight}px`;
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-    // Starting position (drawings start at x: 0, centered vertically)
-    const startX = 0;
-    const startY = 0;
-
-    // Load and draw each submission
-    let loadedCount = 0;
-    const images: HTMLImageElement[] = [];
-
-    allSubmissions.forEach((submission) => {
-      const img = new Image();
-      img.onload = () => {
-        loadedCount++;
-        if (loadedCount === allSubmissions.length) {
-          // All images loaded, redraw canvas
-          ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-          images.forEach((image, imgIndex) => {
-            const x = startX + imgIndex * (DRAWING_SIZE + GAP);
-            ctx.drawImage(image, x, startY, DRAWING_SIZE, DRAWING_SIZE);
-          });
-        }
-      };
-      img.onerror = () => {
-        console.error('Failed to load submission image:', submission.id);
-        loadedCount++;
-      };
-      img.src = submission.imageData;
-      images.push(img);
-    });
-
-    // Center the canvas in the viewport
     if (allSubmissions.length > 0 && offset.x === 0 && offset.y === 0) {
-      const centerX = (window.innerWidth - canvasWidth) / 2;
-      const centerY = (window.innerHeight - canvasHeight) / 2;
+      const centerX = Math.max(0, (window.innerWidth - totalWidth) / 2);
+      const centerY = Math.max(0, (window.innerHeight - totalHeight) / 2);
       setOffset({ x: centerX, y: centerY });
     }
-  }, [allSubmissions, canvasWidth, canvasHeight]);
+  }, [allSubmissions.length, totalWidth, totalHeight]);
 
   return (
     <div
@@ -157,16 +179,98 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
         }}
       />
       
-      {/* Canvas with all submitted drawings - sized to fit the drawings */}
-      <canvas
-        ref={canvasRef}
-        className="absolute"
-        style={{
-          left: 0,
-          top: 0,
-          transform: `translate(${offset.x}px, ${offset.y}px)`,
-        }}
-      />
+      {/* Render all drawings as SVGs */}
+      {allSubmissions.length === 0 ? (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center" style={{ color: '#232323' }}>
+            <div className="font-sans text-[24px] mb-2">No drawings yet</div>
+            <div className="font-sans text-[14px]">Submit a drawing to see it here</div>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="absolute"
+          style={{
+            width: `${totalWidth}px`,
+            height: `${totalHeight}px`,
+            left: 0,
+            top: 0,
+            transform: `translate(${offset.x}px, ${offset.y}px)`,
+          }}
+        >
+          {allSubmissions.map((submission, index) => {
+            const x = index * (DRAWING_DISPLAY_SIZE + GAP);
+            
+            // Prefer SVG string if available (new format)
+            if (submission.svgString) {
+              // Scale down the SVG to fit the display size
+              // The original SVG is canvasSize x canvasSize (300vh = ~2400px)
+              // We want to display it at DRAWING_DISPLAY_SIZE (600px)
+              const canvasSize = typeof window !== 'undefined' ? window.innerHeight * 3 : 2400;
+              const scale = DRAWING_DISPLAY_SIZE / canvasSize;
+              
+              return (
+                <div
+                  key={submission.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${x}px`,
+                    top: '0px',
+                    width: `${DRAWING_DISPLAY_SIZE}px`,
+                    height: `${DRAWING_DISPLAY_SIZE}px`,
+                    overflow: 'hidden',
+                    backgroundColor: 'transparent',
+                  }}
+                >
+                  <div
+                    style={{
+                      transform: `scale(${scale})`,
+                      transformOrigin: 'top left',
+                      width: `${canvasSize}px`,
+                      height: `${canvasSize}px`,
+                    }}
+                    dangerouslySetInnerHTML={{ __html: submission.svgString }}
+                  />
+                </div>
+              );
+            }
+            
+            // Fallback to imageData for old submissions - remove white background
+            if (submission.imageData) {
+              return (
+                <div
+                  key={submission.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${x}px`,
+                    top: '0px',
+                    width: `${DRAWING_DISPLAY_SIZE}px`,
+                    height: `${DRAWING_DISPLAY_SIZE}px`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: 'transparent',
+                  }}
+                >
+                  <img
+                    src={submission.imageData}
+                    alt={`Drawing ${index + 1}`}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      width: 'auto',
+                      height: 'auto',
+                      objectFit: 'contain',
+                    }}
+                  />
+                </div>
+              );
+            }
+            
+            return null;
+          })}
+        </div>
+      )}
     </div>
   );
 }

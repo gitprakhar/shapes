@@ -271,18 +271,74 @@ export function ShapeCreator({ onSave, onBack }: ShapeCreatorProps) {
   };
 
   // Save the shape
-  const handleSave = () => {
+  const handleSave = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     // Convert to image data URL
     const imageData = canvas.toDataURL('image/png');
     
-    // Save to localStorage
-    localStorage.setItem('defaultShape', imageData);
-    
-    // Call the onSave callback
-    onSave();
+    try {
+      // Get today's date in YYYY-MM-DD format
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Save to Supabase daily_shapes table
+      const { supabase } = await import('@/lib/supabase');
+      
+      // Check if shape for today already exists
+      const { data: existingShape, error: checkError } = await supabase
+        .from('daily_shapes')
+        .select('id')
+        .eq('date', today)
+        .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
+      
+      if (checkError) {
+        console.error('Error checking for existing shape:', checkError);
+        throw checkError;
+      }
+      
+      if (existingShape) {
+        // Update existing shape
+        const { error } = await supabase
+          .from('daily_shapes')
+          .update({ shape_data: imageData })
+          .eq('id', existingShape.id);
+        
+        if (error) {
+          console.error('Error updating shape:', error);
+          throw error;
+        }
+      } else {
+        // Insert new shape
+        const { error } = await supabase
+          .from('daily_shapes')
+          .insert({
+            date: today,
+            shape_data: imageData,
+          });
+        
+        if (error) {
+          console.error('Error inserting shape:', error);
+          throw error;
+        }
+      }
+      
+      // Also save to localStorage for backward compatibility
+      localStorage.setItem('defaultShape', imageData);
+      
+      console.log('Shape saved successfully to Supabase!');
+      
+      // Call the onSave callback
+      onSave();
+    } catch (error) {
+      console.error('Failed to save shape to Supabase:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      
+      // Still save to localStorage as fallback
+      localStorage.setItem('defaultShape', imageData);
+      
+      alert(`Failed to save shape to Supabase: ${error instanceof Error ? error.message : 'Unknown error'}. Check console for details.`);
+    }
   };
 
   // Clear the canvas

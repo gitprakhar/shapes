@@ -7,15 +7,21 @@ interface Point {
 
 interface Submission {
   id: string;
-  imageData: string;
+  imageData?: string;
+  drawingPaths?: DrawingPath[];
   author: string;
   note: string;
   x: number;
   y: number;
 }
 
+interface DrawingPath {
+  points: Point[];
+  strokeWidth: number;
+}
+
 interface DrawingCanvasProps {
-  onSubmit: (imageData: string, note: string) => void;
+  onSubmit: (imageData: string, note: string, drawingPaths?: DrawingPath[], svgString?: string) => void;
   existingSubmissions?: Submission[];
 }
 
@@ -30,6 +36,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isKeyPressed, setIsKeyPressed] = useState(false); // Track if key is pressed for drawing
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
+  const [initialOffset, setInitialOffset] = useState({ x: 0, y: 0 }); // Initial centered offset for calculating pan limits
   const [zoom, setZoom] = useState(1); // Zoom level (1 = 100%)
   const zoomRef = useRef(1); // Ref to track current zoom for gesture handlers
   const offsetRef = useRef({ x: 0, y: 0 }); // Ref to track current canvasOffset for gesture handlers
@@ -40,6 +47,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const lastTimeRef = useRef<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [moveCount, setMoveCount] = useState(0); // Track number of moves (max 5)
+  const [canvasSize, setCanvasSize] = useState(0); // Canvas size in pixels (300vh = viewportHeight * 3)
   const drawingPathsRef = useRef<Array<{ points: Point[], strokeWidth: number }>>([]); // Store drawing paths for redraw
   const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Always enabled on drawing page
   const strokeImageRef = useRef<HTMLImageElement | null>(null);
@@ -74,12 +82,37 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     return points;
   };
 
-  // Draw the default shape (loaded from localStorage)
-  const drawShape = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  // Draw the default shape (loaded from Supabase or localStorage fallback)
+  const drawShape = async (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     ctx.clearRect(0, 0, width, height);
     
-    // Load default shape from localStorage
-    const defaultShapeData = localStorage.getItem('defaultShape');
+    // Try to load from Supabase first, fallback to localStorage
+    let defaultShapeData: string | null = null;
+    
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data, error } = await supabase
+        .from('daily_shapes')
+        .select('shape_data')
+        .eq('date', today)
+        .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
+      
+      if (!error && data) {
+        defaultShapeData = data.shape_data;
+      } else {
+        if (error) {
+          console.error('Error loading shape from Supabase:', error);
+        }
+        // Fallback to localStorage
+        defaultShapeData = localStorage.getItem('defaultShape');
+      }
+    } catch (error) {
+      console.error('Failed to load shape from Supabase, using localStorage:', error);
+      defaultShapeData = localStorage.getItem('defaultShape');
+    }
+    
     if (defaultShapeData) {
       const img = new Image();
       img.onload = () => {
@@ -108,34 +141,36 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
 
   // Initialize canvas offset to center the shape in the viewport
   useEffect(() => {
-    if (!isDrawingEnabled) return;
+    if (!isDrawingEnabled || canvasSize === 0) return;
     
-    // The canvas is 300vh x 300vh, positioned at -100vh, -100vh
-    // The shape is drawn at the center of the canvas (150vh, 150vh in canvas coords)
-    // Canvas container position: left: -100vh, top: -100vh
-    // Shape position in viewport (before transform): 
-    //   X: -100vh + 150vh = 50vh = viewportHeight * 0.5
-    //   Y: -100vh + 150vh = 50vh = viewportHeight * 0.5
+    // The canvas is square (canvasSize x canvasSize), positioned at -canvasSize/3, -canvasSize/3
+    // The shape is drawn at the center of the canvas (canvasSize/2, canvasSize/2 in canvas coords)
+    // Canvas container position: left: -canvasSize/3, top: -canvasSize/3
+    // Canvas center position in viewport (before transform): 
+    //   X: -canvasSize/3 + canvasSize/2 = canvasSize/6
+    //   Y: -canvasSize/3 + canvasSize/2 = canvasSize/6
     // Viewport center: (viewportWidth/2, viewportHeight/2)
     // To center the shape, we need to offset by:
-    //   offsetX = viewportWidth/2 - (viewportHeight * 0.5)
-    //   offsetY = viewportHeight/2 - (viewportHeight * 0.5) = 0
+    //   offsetX = viewportWidth/2 - canvasSize/6
+    //   offsetY = viewportHeight/2 - canvasSize/6
     
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const viewportCenterX = viewportWidth / 2;
     const viewportCenterY = viewportHeight / 2;
     
-    // Shape position in viewport before offset (50vh = viewportHeight * 0.5)
-    const shapeXInViewport = viewportHeight * 0.5;
-    const shapeYInViewport = viewportHeight * 0.5;
+    // Canvas center position in viewport before offset
+    const canvasCenterX = canvasSize / 6;
+    const canvasCenterY = canvasSize / 6;
     
-    // Calculate offset to center the shape
-    const offsetX = viewportCenterX - shapeXInViewport;
-    const offsetY = viewportCenterY - shapeYInViewport;
+    // Calculate offset to center the canvas (and shape) in the viewport
+    const offsetX = viewportCenterX - canvasCenterX;
+    const offsetY = viewportCenterY - canvasCenterY;
     
+    // Store the initial centered offset for panning limits
+    setInitialOffset({ x: offsetX, y: offsetY });
     setCanvasOffset({ x: offsetX, y: offsetY });
-  }, [isDrawingEnabled]);
+  }, [isDrawingEnabled, canvasSize]);
 
   // Initialize canvases
   useEffect(() => {
@@ -153,7 +188,12 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     const resizeCanvases = () => {
       const dpr = window.devicePixelRatio || 1;
       const viewportHeight = window.innerHeight;
-      const canvasSize = viewportHeight * 3; // 300vh = 3 * 100vh
+      const canvasSizeValue = viewportHeight * 3; // 300vh = 3 * 100vh
+      
+      // Update canvas size state for container sizing
+      setCanvasSize(canvasSizeValue);
+      
+      const canvasSize = canvasSizeValue;
       
       // Set actual size in memory (scaled for DPI)
       canvas.width = canvasSize * dpr;
@@ -208,7 +248,9 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       }
       
       // Redraw shape after resize
-      drawShape(shapeCtx, canvasSize, canvasSize);
+      drawShape(shapeCtx, canvasSize, canvasSize).catch((error) => {
+        console.error('Failed to draw shape:', error);
+      });
     };
 
     resizeCanvases();
@@ -318,10 +360,21 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       lastGestureScaleRef.current = 1;
     };
 
+    // Prevent browser swipe navigation (back/forward gestures)
+    const preventSwipeNavigation = (e: Event) => {
+      // Prevent horizontal swipe gestures that trigger browser navigation
+      const touchEvent = e as TouchEvent;
+      if (touchEvent.touches && touchEvent.touches.length >= 2) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
     // Use passive: false to allow preventDefault
     document.addEventListener('wheel', preventBrowserZoom as EventListener, { passive: false });
     document.addEventListener('touchstart', preventBrowserZoom as EventListener, { passive: false });
     document.addEventListener('touchmove', preventBrowserZoom as EventListener, { passive: false });
+    document.addEventListener('touchmove', preventSwipeNavigation as EventListener, { passive: false });
     document.addEventListener('gesturestart', handleGestureStart, { passive: false });
     document.addEventListener('gesturechange', handleGestureChange, { passive: false });
     document.addEventListener('gestureend', handleGestureEnd, { passive: false });
@@ -330,6 +383,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       document.removeEventListener('wheel', preventBrowserZoom as EventListener);
       document.removeEventListener('touchstart', preventBrowserZoom as EventListener);
       document.removeEventListener('touchmove', preventBrowserZoom as EventListener);
+      document.removeEventListener('touchmove', preventSwipeNavigation as EventListener);
       document.removeEventListener('gesturestart', handleGestureStart);
       document.removeEventListener('gesturechange', handleGestureChange);
       document.removeEventListener('gestureend', handleGestureEnd);
@@ -498,11 +552,16 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     if (!isDrawingEnabled) return;
     
     if (e.touches.length === 2) {
-      // Two-finger panning - prevent browser zoom
+      // Two-finger panning - prevent browser zoom and navigation
       e.preventDefault();
       e.stopPropagation();
       e.nativeEvent.preventDefault();
       e.nativeEvent.stopImmediatePropagation();
+      
+      // Prevent browser swipe navigation
+      if (e.nativeEvent.cancelable) {
+        e.nativeEvent.preventDefault();
+      }
       setIsPanning(true);
       const distance = getTouchDistance(e.touches[0], e.touches[1]);
       const center = getTouchCenter(e.touches[0], e.touches[1]);
@@ -612,12 +671,16 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       
       // Otherwise, pan the canvas
       const viewportHeight = window.innerHeight;
-      const maxOffset = viewportHeight * 1; // 100vh
-      const minOffset = -viewportHeight * 1; // -100vh
+      // Panning limits are relative to the initial centered offset
+      const panLimit = viewportHeight * 1; // 100vh
+      const maxOffsetX = initialOffset.x + panLimit;
+      const minOffsetX = initialOffset.x - panLimit;
+      const maxOffsetY = initialOffset.y + panLimit;
+      const minOffsetY = initialOffset.y - panLimit;
       
       setCanvasOffset({
-        x: Math.max(minOffset, Math.min(maxOffset, center.x - panStart.x)),
-        y: Math.max(minOffset, Math.min(maxOffset, center.y - panStart.y)),
+        x: Math.max(minOffsetX, Math.min(maxOffsetX, center.x - panStart.x)),
+        y: Math.max(minOffsetY, Math.min(maxOffsetY, center.y - panStart.y)),
       });
       
       lastTouchDistanceRef.current = distance;
@@ -737,14 +800,17 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       });
     } else {
       // Pan the canvas (no modifier key)
-      // Limit panning to keep canvas within bounds (100vh on each side)
+      // Limit panning to keep canvas within bounds (100vh on each side, relative to initial offset)
       const viewportHeight = window.innerHeight;
-      const maxOffset = viewportHeight * 1; // 100vh
-      const minOffset = -viewportHeight * 1; // -100vh
+      const panLimit = viewportHeight * 1; // 100vh
+      const maxOffsetX = initialOffset.x + panLimit;
+      const minOffsetX = initialOffset.x - panLimit;
+      const maxOffsetY = initialOffset.y + panLimit;
+      const minOffsetY = initialOffset.y - panLimit;
       
       setCanvasOffset(prev => ({
-        x: Math.max(minOffset, Math.min(maxOffset, prev.x - e.deltaX)),
-        y: Math.max(minOffset, Math.min(maxOffset, prev.y - e.deltaY)),
+        x: Math.max(minOffsetX, Math.min(maxOffsetX, prev.x - e.deltaX)),
+        y: Math.max(minOffsetY, Math.min(maxOffsetY, prev.y - e.deltaY)),
       }));
     }
   };
@@ -890,7 +956,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     lastTimeRef.current = 0;
   };
 
-  // Reset the drawing (clear all drawn paths)
+  // Reset the drawing (clear all drawn paths and reset zoom/pan)
   const handleReset = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -901,6 +967,14 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     // Reset move count
     setMoveCount(0);
     
+    // Reset zoom to 1 (100%)
+    setZoom(1);
+    zoomRef.current = 1;
+    
+    // Reset pan position to initial centered position
+    setCanvasOffset(initialOffset);
+    offsetRef.current = { ...initialOffset };
+    
     // Clear the canvas
     const ctx = canvas.getContext('2d');
     if (ctx) {
@@ -908,7 +982,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     }
   };
 
-  // Capture the drawing and submit
+  // Capture the drawing and submit as SVG
   const handleSubmit = () => {
     if (isSubmitting) return; // Prevent double submission
     
@@ -922,41 +996,122 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       return;
     }
 
-    // Create a new canvas to combine both layers
-    const combinedCanvas = document.createElement('canvas');
-    const dpr = window.devicePixelRatio || 1;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    // Get canvas size (300vh = viewportHeight * 3)
+    const canvasSize = window.innerHeight * 3;
     
-    combinedCanvas.width = width * dpr;
-    combinedCanvas.height = height * dpr;
+    // Create SVG that combines default shape and drawing
+    // Convert both canvases to data URLs with transparent backgrounds
+    const createCombinedSVG = async (): Promise<string> => {
+      // Create temporary canvases with transparent backgrounds
+      const tempShapeCanvas = document.createElement('canvas');
+      tempShapeCanvas.width = shapeCanvas.width;
+      tempShapeCanvas.height = shapeCanvas.height;
+      const tempShapeCtx = tempShapeCanvas.getContext('2d');
+      if (tempShapeCtx) {
+        tempShapeCtx.drawImage(shapeCanvas, 0, 0);
+      }
+      
+      const tempDrawingCanvas = document.createElement('canvas');
+      tempDrawingCanvas.width = canvas.width;
+      tempDrawingCanvas.height = canvas.height;
+      const tempDrawingCtx = tempDrawingCanvas.getContext('2d');
+      if (tempDrawingCtx) {
+        tempDrawingCtx.drawImage(canvas, 0, 0);
+      }
+      
+      // Get canvas data URLs (PNG supports transparency)
+      const shapeDataUrl = tempShapeCanvas.toDataURL('image/png');
+      const drawingDataUrl = tempDrawingCanvas.toDataURL('image/png');
+      
+      // Build SVG with transparent background
+      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasSize}" height="${canvasSize}" viewBox="0 0 ${canvasSize} ${canvasSize}">`;
+      
+      // Add shape canvas as background layer
+      svgContent += `<image href="${shapeDataUrl}" x="0" y="0" width="${canvasSize}" height="${canvasSize}" />`;
+      
+      // Add drawing canvas as top layer
+      svgContent += `<image href="${drawingDataUrl}" x="0" y="0" width="${canvasSize}" height="${canvasSize}" />`;
+      
+      svgContent += '</svg>';
+      return svgContent;
+    };
     
-    const ctx = combinedCanvas.getContext('2d');
-    if (!ctx) {
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Scale context to match the original canvas scaling
-    ctx.scale(dpr, dpr);
-    
-    // Draw white background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-    
-    // Draw shape canvas
-    ctx.drawImage(shapeCanvas, 0, 0, shapeCanvas.width / dpr, shapeCanvas.height / dpr);
-    
-    // Draw drawing canvas
-    ctx.drawImage(canvas, 0, 0, canvas.width / dpr, canvas.height / dpr);
-    
-    // Convert to image data URL
-    const imageData = combinedCanvas.toDataURL('image/png');
-    onSubmit(imageData, '');
+    // Create and submit SVG
+    createCombinedSVG()
+      .then(async (svgString) => {
+        // Convert SVG to data URL for easy storage
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const svgDataUrl = reader.result as string;
+          
+          // Save to Supabase
+          try {
+            const { supabase } = await import('@/lib/supabase');
+            const today = new Date().toISOString().split('T')[0];
+            
+            // Get today's daily_shape_id
+            const { data: dailyShape, error: shapeError } = await supabase
+              .from('daily_shapes')
+              .select('id')
+              .eq('date', today)
+              .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
+            
+            if (shapeError) {
+              console.error('Error fetching daily shape:', shapeError);
+              throw new Error(`Failed to fetch daily shape: ${shapeError.message}`);
+            }
+            
+            if (!dailyShape) {
+              throw new Error('No daily shape found for today. Please create a shape first.');
+            }
+            
+            // Save drawing to user_drawings table
+            const { error: drawingError } = await supabase
+              .from('user_drawings')
+              .insert({
+                daily_shape_id: dailyShape.id,
+                drawing_paths: {
+                  svgString,
+                  imageData: svgDataUrl,
+                  drawingPaths: drawingPathsRef.current,
+                },
+              });
+            
+            if (drawingError) throw drawingError;
+            
+            console.log('Drawing saved successfully to Supabase!');
+          } catch (error) {
+            console.error('Failed to save drawing to Supabase:', error);
+            console.error('Error details:', JSON.stringify(error, null, 2));
+            // Continue with local submission even if Supabase fails
+          }
+          
+          onSubmit(svgDataUrl, '', undefined, svgString); // Pass both data URL and raw SVG string
+          setIsSubmitting(false);
+        };
+        reader.onerror = () => {
+          setIsSubmitting(false);
+        };
+        reader.readAsDataURL(svgBlob);
+      })
+      .catch((error) => {
+        console.error('Failed to create SVG:', error);
+        setIsSubmitting(false);
+      });
   };
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ backgroundColor: '#F1F1F1' }}>
+    <div 
+      className="fixed inset-0 overflow-hidden" 
+      style={{ 
+        backgroundColor: '#F1F1F1',
+        overscrollBehavior: 'none',
+        overscrollBehaviorX: 'none',
+        overscrollBehaviorY: 'none',
+        touchAction: 'pan-x pan-y',
+      }}
+    >
       {/* Drawing section */}
       <div 
         className="absolute w-screen h-screen overflow-hidden"
@@ -964,55 +1119,65 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           backgroundColor: '#F1F1F1',
           left: 0,
           top: 0,
+          overscrollBehavior: 'none',
+          overscrollBehaviorX: 'none',
+          overscrollBehaviorY: 'none',
+          touchAction: 'pan-x pan-y',
         }}
       >
-        {/* Grid background - 300vh x 300vh (100vh on each side) - dots don't scale */}
+        {/* Grid background - covers entire viewport and beyond - dots don't scale */}
         <div
-          className="absolute pointer-events-none"
+          className="fixed pointer-events-none"
           style={{
             backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
             backgroundSize: '24px 24px',
-            width: '300vh',
-            height: '300vh',
-            left: '-100vh',
-            top: '-100vh',
-            transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px)`,
+            width: '100vw',
+            height: '100vh',
+            left: 0,
+            top: 0,
             zIndex: 0,
           }}
         />
 
-        {/* Rules in bottom left */}
-        <div className="absolute bottom-16 left-12 z-20">
-          <div className="font-sans text-[28px] font-normal mb-1 pointer-events-none" style={{ color: '#232323' }}>
-            Draw and share
-          </div>
-          <div className="font-sans text-[14px] font-normal pointer-events-none mb-2" style={{ color: '#232323', lineHeight: '1.4', maxWidth: '300px' }}>
-            Every day, everyone gets the same shape. <br></br>Draw something from it, submit it, <br></br>and see what others made
-          </div>
-          <div className="flex flex-col gap-4 pt-4 mt-2">
-            <div className="flex items-center gap-6">
-              <div 
-                className="font-sans text-[16px] font-normal pointer-events-none"
-                style={{ color: '#232323' }}
-              >
-                {moveCount}/5 Moves
+        {/* Bottom section: text left with buttons below, moves right */}
+        <div className="absolute bottom-16 left-0 right-0 z-20 px-12 pointer-events-none">
+          <div className="flex items-end justify-between">
+            {/* Left: Text and buttons */}
+            <div className="flex flex-col">
+              <div className="font-sans font-normal pointer-events-none" style={{ color: '#232323' }}>
+                <div className="text-[28px] mb-1">Draw and share</div>
+                <div className="text-[14px]" style={{ lineHeight: '1.4' }}>
+                  Every day, everyone gets the same shape.<br />
+                  Draw something from it, submit it, <br />and see what others made
+                </div>
               </div>
-              <button
-                onClick={handleReset}
-                className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal"
-                style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
-              >
-                Reset Canvas
-              </button>
+              {/* Buttons under text */}
+              <div className="flex items-center gap-6 pt-4 mt-2 pointer-events-auto">
+                <button
+                  onClick={handleReset}
+                  className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal"
+                  style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
+                >
+                  Reset Canvas
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={isSubmitting}
+                  className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit'}
+                </button>
+              </div>
             </div>
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
+            
+            {/* Right: Move counter */}
+            <div 
+              className="font-sans text-[16px] font-normal pointer-events-none"
+              style={{ color: '#232323' }}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit'}
-            </button>
+              {moveCount}/5 Moves
+            </div>
           </div>
         </div>
 
@@ -1021,14 +1186,18 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
         <div
           className="absolute"
           style={{
-            width: '300vh',
-            height: '300vh',
-            left: '-100vh',
-            top: '-100vh',
+            width: canvasSize > 0 ? `${canvasSize}px` : '300vh',
+            height: canvasSize > 0 ? `${canvasSize}px` : '300vh',
+            left: canvasSize > 0 ? `${-canvasSize / 3}px` : '-100vh',
+            top: canvasSize > 0 ? `${-canvasSize / 3}px` : '-100vh',
             transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${zoom})`,
             transformOrigin: '0 0',
             cursor: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75 1.84-1.83zM3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z\' fill=\'%231a1818\'/%3E%3C/svg%3E") 2 22, auto',
             userSelect: 'none',
+            overscrollBehavior: 'none',
+            overscrollBehaviorX: 'none',
+            overscrollBehaviorY: 'none',
+            touchAction: 'pan-x pan-y',
           }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
