@@ -123,7 +123,7 @@ function AppContent() {
       />
       <Route 
         path="/draw" 
-        element={<DrawingCanvas onSubmit={handleSubmit} existingSubmissions={submissionsWithPositions} />} 
+        element={<DrawingCanvas onSubmit={handleSubmit} />} 
       />
       <Route 
         path="/create-shape" 
