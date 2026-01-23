@@ -72,6 +72,15 @@ export function Homepage() {
             </div>
           </div>
 
+          {/* Large centered text in EB Garamond */}
+          <div className="absolute inset-0 flex items-center justify-center z-1">
+            <div className="text-center max-w-4xl px-12" style={{ color: '#232323' }}>
+              <div className="font-serif text-[120px] font-normal leading-none tracking-tight pointer-events-none">
+                Draw <em>anything*</em>
+              </div>
+            </div>
+          </div>
+
           {/* Text at bottom */}
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10">
             <div 
