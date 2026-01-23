@@ -5,15 +5,6 @@ interface Point {
   y: number;
 }
 
-interface Submission {
-  id: string;
-  imageData?: string;
-  drawingPaths?: DrawingPath[];
-  author: string;
-  note: string;
-  x: number;
-  y: number;
-}
 
 interface DrawingPath {
   points: Point[];
@@ -22,19 +13,16 @@ interface DrawingPath {
 
 interface DrawingCanvasProps {
   onSubmit: (imageData: string, note: string, drawingPaths?: DrawingPath[], svgString?: string) => void;
-  existingSubmissions?: Submission[];
 }
 
 // Simple crayon drawing - no sticky notes
 
-export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCanvasProps) {
+export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shapeCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [isKeyPressed, setIsKeyPressed] = useState(false); // Track if key is pressed for drawing
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
   const [initialOffset, setInitialOffset] = useState({ x: 0, y: 0 }); // Initial centered offset for calculating pan limits
   const [zoom, setZoom] = useState(1); // Zoom level (1 = 100%)
@@ -49,7 +37,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const [moveCount, setMoveCount] = useState(0); // Track number of moves (max 5)
   const [canvasSize, setCanvasSize] = useState(0); // Canvas size in pixels (300vh = viewportHeight * 3)
   const drawingPathsRef = useRef<Array<{ points: Point[], strokeWidth: number }>>([]); // Store drawing paths for redraw
-  const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Always enabled on drawing page
+  const isDrawingEnabled = true; // Always enabled on drawing page
   const strokeImageRef = useRef<HTMLImageElement | null>(null);
   
   // Marker/crayon settings
@@ -61,26 +49,6 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   // Zoom settings
   const MIN_ZOOM = 0.1; // 10%
   const MAX_ZOOM = 4; // 400%
-  
-
-  // Generate a random polygon
-  const generateRandomPolygon = (centerX: number, centerY: number, radius: number): Point[] => {
-    const sides = Math.floor(Math.random() * 5) + 5; // 5-9 sides
-    const points: Point[] = [];
-    const angleStep = (2 * Math.PI) / sides;
-    const rotation = Math.random() * Math.PI * 2;
-
-    for (let i = 0; i < sides; i++) {
-      const angle = i * angleStep + rotation;
-      const distance = radius * (0.7 + Math.random() * 0.3); // Vary distance for irregularity
-      points.push({
-        x: centerX + Math.cos(angle) * distance,
-        y: centerY + Math.sin(angle) * distance,
-      });
-    }
-
-    return points;
-  };
 
   // Draw the default shape (loaded from Supabase or localStorage fallback)
   const drawShape = async (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -405,13 +373,11 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       if (!isDrawingEnabled) return;
       // Allow drawing when any key is pressed (except modifier keys)
       if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        setIsKeyPressed(true);
         setIsPanning(false); // Stop panning when key is pressed
       }
     };
 
     const handleKeyUp = () => {
-      setIsKeyPressed(false);
       setIsDrawing(false); // Stop drawing when key is released
     };
 
@@ -951,7 +917,6 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     }
     
     setIsDrawing(false);
-    setIsHovering(false);
     lastPointRef.current = null;
     lastTimeRef.current = 0;
   };
@@ -1230,7 +1195,6 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
             }}
             onMouseMove={(e) => {
               e.stopPropagation(); // Prevent container from handling this
-              setIsHovering(true);
               handleMouseMove(e);
             }}
             onMouseUp={(e) => {

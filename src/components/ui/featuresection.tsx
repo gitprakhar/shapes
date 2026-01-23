@@ -15,7 +15,7 @@ export interface ImageTextSectionProps {
 export const ImageTextSection = ({
     title,
     description,
-    image,
+    image: _image,
     imagePosition = "right",
     dark = false,
   link,
