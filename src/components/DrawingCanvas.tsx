@@ -39,6 +39,7 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const lastPointRef = useRef<Point | null>(null);
   const lastTimeRef = useRef<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [moveCount, setMoveCount] = useState(0); // Track number of moves (max 5)
   const drawingPathsRef = useRef<Array<{ points: Point[], strokeWidth: number }>>([]); // Store drawing paths for redraw
   const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Always enabled on drawing page
   const strokeImageRef = useRef<HTMLImageElement | null>(null);
@@ -513,6 +514,9 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       });
     } else if (e.touches.length === 1) {
       // Single touch = drawing
+      // Check if user has reached the move limit
+      if (moveCount >= 5) return;
+      
       const canvas = canvasRef.current;
       if (!canvas) return;
       
@@ -536,6 +540,9 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
       setIsDrawing(true);
       lastPointRef.current = pos;
       lastTimeRef.current = Date.now();
+      
+      // Increment move count (one touch = one move)
+      setMoveCount(prev => prev + 1);
       
       drawingPathsRef.current.push({
         points: [pos],
@@ -746,6 +753,9 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawingEnabled) return;
     
+    // Check if user has reached the move limit
+    if (moveCount >= 5) return;
+    
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -764,6 +774,9 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     const pos = getMousePos(e);
     lastPointRef.current = pos;
     lastTimeRef.current = Date.now();
+    
+    // Increment move count (one mouse click = one move)
+    setMoveCount(prev => prev + 1);
     
     // Start a new path
     drawingPathsRef.current.push({
@@ -877,6 +890,24 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
     lastTimeRef.current = 0;
   };
 
+  // Reset the drawing (clear all drawn paths)
+  const handleReset = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // Clear all drawing paths
+    drawingPathsRef.current = [];
+    
+    // Reset move count
+    setMoveCount(0);
+    
+    // Clear the canvas
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  };
+
   // Capture the drawing and submit
   const handleSubmit = () => {
     if (isSubmitting) return; // Prevent double submission
@@ -958,14 +989,31 @@ export function DrawingCanvas({ onSubmit, existingSubmissions = [] }: DrawingCan
           <div className="font-sans text-[14px] font-normal pointer-events-none mb-2" style={{ color: '#232323', lineHeight: '1.4', maxWidth: '300px' }}>
             Every day, everyone gets the same shape. <br></br>Draw something from it, submit it, <br></br>and see what others made
           </div>
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left pt-4 m-0 border-0 bg-transparent font-normal mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
-          >
-            {isSubmitting ? 'Submitting...' : 'Submit'}
-          </button>
+          <div className="flex flex-col gap-4 pt-4 mt-2">
+            <div className="flex items-center gap-6">
+              <div 
+                className="font-sans text-[16px] font-normal pointer-events-none"
+                style={{ color: '#232323' }}
+              >
+                {moveCount}/5 Moves
+              </div>
+              <button
+                onClick={handleReset}
+                className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal"
+                style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
+              >
+                Reset Canvas
+              </button>
+            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit'}
+            </button>
+          </div>
         </div>
 
 

@@ -67,7 +67,7 @@ export function Homepage() {
           <div className="absolute inset-0 flex items-center justify-center z-1">
             <div className="text-center max-w-4xl px-12" style={{ color: '#232323' }}>
               <div className="font-serif text-[120px] font-normal leading-none tracking-tight pointer-events-none">
-                Draw almost <em>anything*</em>
+                Draw <em>anything*</em>
               </div>
             </div>
           </div>
@@ -84,7 +84,7 @@ export function Homepage() {
                 onClick={() => navigate('/draw')}
               >
                 today's shape
-              </span>
+              </span> in 5 moves or less
             </div>
           </div>
         </div>
