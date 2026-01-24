@@ -27,6 +27,10 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const lastTouchDistanceRef = useRef<number | null>(null);
+  const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
@@ -253,27 +257,115 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     }
   }, [allSubmissions.length, totalWidth, totalHeight]);
   
-  // Handle zoom with mouse wheel
+  // Keep refs in sync with state
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { offsetRef.current = offset; }, [offset]);
+
+  // Handle wheel: Ctrl/Cmd+scroll = zoom, plain scroll = pan
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
-    
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      
-      // Zoom in/out
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(0.1, Math.min(2, zoom * zoomFactor));
-      
+
+    if (e.ctrlKey || e.metaKey) {
       // Zoom towards mouse position
-      const zoomChange = newZoom / zoom;
-      const newOffsetX = mouseX - (mouseX - offset.x) * zoomChange;
-      const newOffsetY = mouseY - (mouseY - offset.y) * zoomChange;
-      
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const zoomSensitivity = 0.005;
+        const zoomDelta = -e.deltaY * zoomSensitivity;
+        const newZoom = Math.max(0.1, Math.min(2, zoom + zoomDelta));
+
+        // Transform: translate(offset) scale(zoom), origin top-left
+        // screenX = offset.x + cx * zoom
+        const canvasX = (mouseX - offset.x) / zoom;
+        const canvasY = (mouseY - offset.y) / zoom;
+
+        const newOffsetX = mouseX - canvasX * newZoom;
+        const newOffsetY = mouseY - canvasY * newZoom;
+
+        setZoom(newZoom);
+        setOffset({ x: newOffsetX, y: newOffsetY });
+      }
+    } else {
+      // Pan the canvas
+      setOffset(prev => ({
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY,
+      }));
+    }
+  };
+
+  // Touch handlers for mobile pinch-to-zoom and two-finger pan
+  const getTouchDistance = (t1: React.Touch, t2: React.Touch) =>
+    Math.sqrt(Math.pow(t2.clientX - t1.clientX, 2) + Math.pow(t2.clientY - t1.clientY, 2));
+
+  const getTouchCenter = (t1: React.Touch, t2: React.Touch) => ({
+    x: (t1.clientX + t2.clientX) / 2,
+    y: (t1.clientY + t2.clientY) / 2,
+  });
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      lastTouchDistanceRef.current = getTouchDistance(e.touches[0], e.touches[1]);
+      lastTouchCenterRef.current = getTouchCenter(e.touches[0], e.touches[1]);
+    } else if (e.touches.length === 1) {
+      setIsPanning(true);
+      setPanStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+
+      if (lastTouchDistanceRef.current === null || lastTouchCenterRef.current === null) {
+        lastTouchDistanceRef.current = getTouchDistance(e.touches[0], e.touches[1]);
+        lastTouchCenterRef.current = getTouchCenter(e.touches[0], e.touches[1]);
+        return;
+      }
+
+      const center = getTouchCenter(e.touches[0], e.touches[1]);
+      const distance = getTouchDistance(e.touches[0], e.touches[1]);
+      const prevCenter = lastTouchCenterRef.current;
+      const prevDistance = lastTouchDistanceRef.current;
+      const currentZoom = zoomRef.current;
+      const currentOffset = offsetRef.current;
+
+      // Ratio-based zoom
+      const newZoom = Math.max(0.1, Math.min(2, currentZoom * (distance / prevDistance)));
+
+      // Transform: translate(offset) scale(zoom), origin top-left
+      // screenX = offset.x + cx * zoom
+      // cx = (screenX - offset.x) / zoom
+      const canvasX = (prevCenter.x - currentOffset.x) / currentZoom;
+      const canvasY = (prevCenter.y - currentOffset.y) / currentZoom;
+
+      // New offset: same canvas point under new center at new zoom
+      const newOffsetX = center.x - canvasX * newZoom;
+      const newOffsetY = center.y - canvasY * newZoom;
+
+      zoomRef.current = newZoom;
+      offsetRef.current = { x: newOffsetX, y: newOffsetY };
+      lastTouchDistanceRef.current = distance;
+      lastTouchCenterRef.current = center;
+
       setZoom(newZoom);
       setOffset({ x: newOffsetX, y: newOffsetY });
+    } else if (e.touches.length === 1 && isPanning) {
+      const deltaX = e.touches[0].clientX - panStart.x;
+      const deltaY = e.touches[0].clientY - panStart.y;
+
+      setOffset(prev => ({ x: prev.x + deltaX, y: prev.y + deltaY }));
+      setPanStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
     }
+  };
+
+  const handleTouchEnd = () => {
+    setIsPanning(false);
+    lastTouchDistanceRef.current = null;
+    lastTouchCenterRef.current = null;
   };
 
   return (
@@ -290,6 +382,9 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       {/* Countdown timer in top right */}
       <div
