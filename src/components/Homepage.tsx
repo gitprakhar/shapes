@@ -66,22 +66,22 @@ export function Homepage() {
             }}
           />
 
-          {/* Shape image - mobile: larger and at bottom, desktop: centered */}
-          <div className="absolute inset-0 flex items-end md:items-center justify-center z-0 pointer-events-none overflow-visible pb-8 md:pb-0">
+          {/* Shape image - mobile: at top, desktop: centered */}
+          <div className="absolute inset-0 flex items-start md:items-center justify-center z-0 pointer-events-none overflow-visible pt-8 md:pt-0">
             <img
               src={isMobile ? `/mobile/shape${currentShapeIndex + 1}.png` : `/shapes/shape${currentShapeIndex + 1}.png`}
               alt="Shape"
               className="object-contain opacity-100 transition-opacity duration-500"
-              style={{ 
-                width: isMobile ? '100vw' : '90vw', 
-                height: isMobile ? 'auto' : '90vh', 
-                transform: 'translateY(0%)',
+              style={{
+                width: isMobile ? '100vw' : '90vw',
+                height: isMobile ? 'auto' : '90vh',
+                transform: isMobile ? 'translateY(-38%)' : 'translateY(0%)',
               }}
             />
           </div>
 
-          {/* Large text - mobile: left-aligned 80px, desktop: 120px, 4K: larger */}
-          <div className="absolute inset-0 flex items-start md:items-center justify-start md:justify-center z-1 px-6 md:px-12 pt-32 md:pt-0">
+          {/* Large text - mobile: left-aligned at bottom, desktop: 120px centered */}
+          <div className="absolute inset-0 flex items-end md:items-center justify-start md:justify-center z-1 px-6 md:px-12 pb-32 md:pb-0 md:pt-0">
             <div className="text-left md:text-center max-w-4xl" style={{ color: '#232323' }}>
               <div className="font-serif text-[80px] md:text-[120px] 2xl:text-[180px] font-normal leading-none tracking-tight pointer-events-none">
                 <em>draw anything*</em>
