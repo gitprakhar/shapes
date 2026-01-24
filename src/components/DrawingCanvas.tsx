@@ -641,6 +641,10 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
           const baseLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
           const baseTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
           
+          // Calculate where the canvas center (where shape is drawn) appears on screen
+          const visualCenterX = baseLeft + currentOffset.x + (canvasSize / 2) * currentZoom;
+          const visualCenterY = baseTop + currentOffset.y + (canvasSize / 2) * currentZoom;
+          
           // Match desktop zoom logic exactly:
           // Find canvas coordinates under pinch center
           // screenX = baseLeft + canvasOffset.x + cx * zoom
@@ -662,6 +666,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             `baseLeft: ${baseLeft.toFixed(0)}, baseTop: ${baseTop.toFixed(0)}\n` +
             `offset: ${currentOffset.x.toFixed(0)}, ${currentOffset.y.toFixed(0)}\n` +
             `zoom: ${currentZoom.toFixed(2)}\n` +
+            `visualCenter: ${visualCenterX.toFixed(0)}, ${visualCenterY.toFixed(0)}\n` +
             `canvasXY: ${canvasX.toFixed(0)}, ${canvasY.toFixed(0)}\n` +
             `newOffset: ${newOffsetX.toFixed(0)}, ${newOffsetY.toFixed(0)}`
           );
