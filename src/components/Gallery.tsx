@@ -28,6 +28,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   // Load all submissions from Supabase on mount and when submissions change
   useEffect(() => {
@@ -128,6 +129,29 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     const interval = setInterval(() => {
       loadSubmissions();
     }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Calculate time remaining until midnight
+  useEffect(() => {
+    const updateTimeRemaining = () => {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0); // Next midnight
+      
+      const diff = midnight.getTime() - now.getTime();
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      
+      setTimeRemaining(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`);
+    };
+    
+    // Update immediately
+    updateTimeRemaining();
+    
+    // Update every minute (since we're not showing seconds)
+    const interval = setInterval(updateTimeRemaining, 60000);
     
     return () => clearInterval(interval);
   }, []);
@@ -267,6 +291,29 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
     >
+      {/* Countdown timer in top right */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          zIndex: 1000,
+        }}
+      >
+        <div style={{ 
+          fontSize: '14px', 
+          color: '#232323', 
+          fontFamily: 'var(--font-sans)',
+          fontWeight: 'normal',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <span>Next shape in</span>
+          <span style={{ letterSpacing: '1px' }}>{timeRemaining}</span>
+        </div>
+      </div>
+      
       {/* Dot grid background */}
       <div
         className="absolute inset-0"
