@@ -36,6 +36,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [moveCount, setMoveCount] = useState(0); // Track number of moves (max 5)
   const [canvasSize, setCanvasSize] = useState(0); // Canvas size in pixels (300vh = viewportHeight * 3)
+  const [debugInfo, setDebugInfo] = useState<string>('');
   const drawingPathsRef = useRef<Array<{ points: Point[], strokeWidth: number }>>([]); // Store drawing paths for redraw
   const isDrawingEnabled = true; // Always enabled on drawing page
   const strokeImageRef = useRef<HTMLImageElement | null>(null);
@@ -650,6 +651,18 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
           const newOffsetX = screenX - baseLeft - canvasX * newZoom;
           const newOffsetY = screenY - baseTop - canvasY * newZoom;
           
+          // Debug overlay
+          setDebugInfo(
+            `touch1: ${e.touches[0].clientX.toFixed(0)}, ${e.touches[0].clientY.toFixed(0)}\n` +
+            `touch2: ${e.touches[1].clientX.toFixed(0)}, ${e.touches[1].clientY.toFixed(0)}\n` +
+            `center: ${center.x.toFixed(0)}, ${center.y.toFixed(0)}\n` +
+            `baseLeft: ${baseLeft.toFixed(0)}, baseTop: ${baseTop.toFixed(0)}\n` +
+            `offset: ${canvasOffset.x.toFixed(0)}, ${canvasOffset.y.toFixed(0)}\n` +
+            `zoom: ${zoom.toFixed(2)}\n` +
+            `canvasXY: ${canvasX.toFixed(0)}, ${canvasY.toFixed(0)}\n` +
+            `newOffset: ${newOffsetX.toFixed(0)}, ${newOffsetY.toFixed(0)}`
+          );
+          
           setZoom(newZoom);
           setCanvasOffset({
             x: newOffsetX,
@@ -735,6 +748,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     lastTouchCenterRef.current = null;
     lastPointRef.current = null;
     lastTimeRef.current = 0;
+    setDebugInfo(''); // Clear debug info when touch ends
   };
 
   // Handle wheel events for trackpad two-finger panning and zoom
@@ -1152,6 +1166,15 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
         touchAction: 'pan-x pan-y',
       }}
     >
+      {/* Debug overlay */}
+      {debugInfo && (
+        <div 
+          className="fixed top-4 left-4 bg-black/80 text-white text-xs p-3 z-50 font-mono whitespace-pre rounded"
+          style={{ pointerEvents: 'none' }}
+        >
+          {debugInfo}
+        </div>
+      )}
       {/* Drawing section */}
       <div 
         className="absolute w-screen h-screen overflow-hidden"
