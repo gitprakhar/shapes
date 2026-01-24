@@ -22,7 +22,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const shapeCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
   const [initialOffset, setInitialOffset] = useState({ x: 0, y: 0 }); // Initial centered offset for calculating pan limits
   const [zoom, setZoom] = useState(1); // Zoom level (1 = 100%)
@@ -36,7 +35,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [moveCount, setMoveCount] = useState(0); // Track number of moves (max 5)
   const [canvasSize, setCanvasSize] = useState(0); // Canvas size in pixels (300vh = viewportHeight * 3)
-  const [debugInfo, setDebugInfo] = useState<string>('');
   const drawingPathsRef = useRef<Array<{ points: Point[], strokeWidth: number }>>([]); // Store drawing paths for redraw
   const isDrawingEnabled = true; // Always enabled on drawing page
   const strokeImageRef = useRef<HTMLImageElement | null>(null);
@@ -292,29 +290,28 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       const gestureX = gestureEvent.clientX !== undefined ? gestureEvent.clientX : viewportWidth / 2;
       const gestureY = gestureEvent.clientY !== undefined ? gestureEvent.clientY : viewportHeight / 2;
       
-      // Calculate base position directly from canvasSize
       // Container CSS: left: -canvasSize/3, top: -canvasSize/3
       const containerLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
       const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+
+      // CSS transform: scale(zoom) translate(offset.x, offset.y), origin 0 0
+      // Screen position formula: screenX = containerLeft + (cx + offset.x) * zoom
+      // Therefore: cx = (screenX - containerLeft) / zoom - offset.x
+      const canvasX = (gestureX - containerLeft) / currentZoom - currentOffset.x;
+      const canvasY = (gestureY - containerTop) / currentZoom - currentOffset.y;
+
+      // New offset so same canvas point stays under gesture center after zoom
+      // newOffset.x = (screenX - containerLeft) / newZoom - cx
+      const newOffsetX = (gestureX - containerLeft) / newZoom - canvasX;
+      const newOffsetY = (gestureY - containerTop) / newZoom - canvasY;
       
-      // With scale-then-translate transform:
-      // screenX = containerLeft + cx * zoom + offset.x
-      // Therefore: cx = (screenX - containerLeft - offset.x) / zoom
-      const canvasX = (gestureX - containerLeft - currentOffset.x) / currentZoom;
-      const canvasY = (gestureY - containerTop - currentOffset.y) / currentZoom;
-      
-      // Calculate new offset so same canvas point stays under gesture center after zoom
-      // newOffsetX = gestureX - containerLeft - canvasX * newZoom
-      const newOffsetX = gestureX - containerLeft - canvasX * newZoom;
-      const newOffsetY = gestureY - containerTop - canvasY * newZoom;
-      
-      setZoom(newZoom);
-      setCanvasOffset({
-        x: newOffsetX,
-        y: newOffsetY,
-      });
-      
+      // Update refs synchronously first, then state (async)
+      zoomRef.current = newZoom;
+      offsetRef.current = { x: newOffsetX, y: newOffsetY };
       lastGestureScaleRef.current = currentScale;
+
+      setZoom(newZoom);
+      setCanvasOffset({ x: newOffsetX, y: newOffsetY });
     };
 
     const handleGestureEnd = (e: Event) => {
@@ -534,10 +531,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       const center = getTouchCenter(e.touches[0], e.touches[1]);
       lastTouchDistanceRef.current = distance;
       lastTouchCenterRef.current = center;
-      setPanStart({
-        x: center.x - canvasOffset.x,
-        y: center.y - canvasOffset.y,
-      });
     } else if (e.touches.length === 1 && !isPanning) {
       // Single touch = drawing
       // Check if user has reached the move limit
@@ -588,116 +581,54 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       if (isDrawing) {
         setIsDrawing(false);
       }
-      
-      // Initialize panning if not already
-      if (!isPanning) {
-        setIsPanning(true);
-        const distance = getTouchDistance(e.touches[0], e.touches[1]);
-        const center = getTouchCenter(e.touches[0], e.touches[1]);
-        lastTouchDistanceRef.current = distance;
-        lastTouchCenterRef.current = center;
-        setPanStart({
-          x: center.x - canvasOffset.x,
-          y: center.y - canvasOffset.y,
-        });
-      }
+
       // Two-finger gesture - prevent browser navigation/zoom
       e.preventDefault();
       e.stopPropagation();
       e.nativeEvent.preventDefault();
       e.nativeEvent.stopImmediatePropagation();
-      
+
+      // Initialize tracking on first two-finger detection
+      if (!isPanning || lastTouchDistanceRef.current === null || lastTouchCenterRef.current === null) {
+        setIsPanning(true);
+        lastTouchDistanceRef.current = getTouchDistance(e.touches[0], e.touches[1]);
+        lastTouchCenterRef.current = getTouchCenter(e.touches[0], e.touches[1]);
+        return;
+      }
+
       const center = getTouchCenter(e.touches[0], e.touches[1]);
       const distance = getTouchDistance(e.touches[0], e.touches[1]);
-      
-      // Check if this is a pinch zoom (distance changed significantly)
-      if (lastTouchDistanceRef.current !== null) {
-        const distanceDelta = distance - lastTouchDistanceRef.current;
-        const zoomDelta = distanceDelta / 100; // Adjust sensitivity
-        const currentZoom = zoomRef.current;
-        const currentOffset = offsetRef.current;
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + zoomDelta));
-        
-        if (Math.abs(distanceDelta) > 5) {
-          // Significant distance change = zoom towards center of pinch
-          // Get center point between two touches (clientX/clientY are viewport coordinates)
-          const touchCenterX = center.x;
-          const touchCenterY = center.y;
-          
-          // Get the canvas container to check for any viewport offset
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          const container = canvas.parentElement;
-          if (!container) return;
-          
-          // clientX/clientY are already relative to viewport, but check if container has offset
-          // For consistency with desktop (which uses e.clientX directly), use touch coordinates as-is
-          // screenX and screenY are the viewport coordinates where we want to zoom
-          const screenX = touchCenterX;
-          const screenY = touchCenterY;
-          
-          // Calculate base position directly from canvasSize (same as desktop)
-          // Container CSS: left: -canvasSize/3, top: -canvasSize/3
-          const containerLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
-          const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
-          
-          // Calculate where the canvas center (where shape is drawn) appears on screen
-          // With scale-then-translate: screenX = containerLeft + cx * zoom + offset.x
-          const visualCenterX = containerLeft + (canvasSize / 2) * currentZoom + currentOffset.x;
-          const visualCenterY = containerTop + (canvasSize / 2) * currentZoom + currentOffset.y;
-          
-          // With scale-then-translate transform:
-          // screenX = containerLeft + cx * zoom + offset.x
-          // Therefore: cx = (screenX - containerLeft - offset.x) / zoom
-          const canvasX = (screenX - containerLeft - currentOffset.x) / currentZoom;
-          const canvasY = (screenY - containerTop - currentOffset.y) / currentZoom;
-          
-          // Calculate new offset so same canvas point stays under pinch center after zoom
-          // newOffsetX = screenX - containerLeft - canvasX * newZoom
-          const newOffsetX = screenX - containerLeft - canvasX * newZoom;
-          const newOffsetY = screenY - containerTop - canvasY * newZoom;
-          
-          // Debug overlay
-          setDebugInfo(
-            `touch1: ${e.touches[0].clientX.toFixed(0)}, ${e.touches[0].clientY.toFixed(0)}\n` +
-            `touch2: ${e.touches[1].clientX.toFixed(0)}, ${e.touches[1].clientY.toFixed(0)}\n` +
-            `center: ${center.x.toFixed(0)}, ${center.y.toFixed(0)}\n` +
-            `canvasSize: ${canvasSize}, vh: ${window.innerHeight}\n` +
-            `containerLeft: ${containerLeft.toFixed(0)}, containerTop: ${containerTop.toFixed(0)}\n` +
-            `offset: ${currentOffset.x.toFixed(0)}, ${currentOffset.y.toFixed(0)}\n` +
-            `zoom: ${currentZoom.toFixed(2)} -> ${newZoom.toFixed(2)}\n` +
-            `visualCenter: ${visualCenterX.toFixed(0)}, ${visualCenterY.toFixed(0)}\n` +
-            `canvasXY: ${canvasX.toFixed(0)}, ${canvasY.toFixed(0)}\n` +
-            `newOffset: ${newOffsetX.toFixed(0)}, ${newOffsetY.toFixed(0)}`
-          );
-          
-          setZoom(newZoom);
-          setCanvasOffset({
-            x: newOffsetX,
-            y: newOffsetY,
-          });
-          zoomRef.current = newZoom;
-          offsetRef.current = { x: newOffsetX, y: newOffsetY };
-          lastTouchDistanceRef.current = distance;
-          return;
-        }
-      }
-      
-      // Otherwise, pan the canvas
-      const viewportHeight = window.innerHeight;
-      // Panning limits are relative to the initial centered offset
-      const panLimit = viewportHeight * 1; // 100vh
-      const maxOffsetX = initialOffset.x + panLimit;
-      const minOffsetX = initialOffset.x - panLimit;
-      const maxOffsetY = initialOffset.y + panLimit;
-      const minOffsetY = initialOffset.y - panLimit;
-      
-      setCanvasOffset({
-        x: Math.max(minOffsetX, Math.min(maxOffsetX, center.x - panStart.x)),
-        y: Math.max(minOffsetY, Math.min(maxOffsetY, center.y - panStart.y)),
-      });
-      
+      const prevCenter = lastTouchCenterRef.current;
+      const prevDistance = lastTouchDistanceRef.current;
+      const currentZoom = zoomRef.current;
+      const currentOffset = offsetRef.current;
+
+      // Ratio-based zoom (consistent behavior at all zoom levels)
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * (distance / prevDistance)));
+
+      // Container CSS: left: -canvasSize/3, top: -canvasSize/3
+      const containerLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+      const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+
+      // CSS transform: scale(zoom) translate(offset.x, offset.y), origin 0 0
+      // Screen position formula: screenX = containerLeft + (cx + offset.x) * zoom
+      // Therefore: cx = (screenX - containerLeft) / zoom - offset.x
+      const canvasX = (prevCenter.x - containerLeft) / currentZoom - currentOffset.x;
+      const canvasY = (prevCenter.y - containerTop) / currentZoom - currentOffset.y;
+
+      // New offset: same canvas point under NEW pinch center at NEW zoom
+      // This naturally handles both zoom (distance change) and pan (center movement)
+      const newOffsetX = (center.x - containerLeft) / newZoom - canvasX;
+      const newOffsetY = (center.y - containerTop) / newZoom - canvasY;
+
+      // Update refs synchronously first, then state (async)
+      zoomRef.current = newZoom;
+      offsetRef.current = { x: newOffsetX, y: newOffsetY };
       lastTouchDistanceRef.current = distance;
+      lastTouchCenterRef.current = center;
+
+      setZoom(newZoom);
+      setCanvasOffset({ x: newOffsetX, y: newOffsetY });
     } else if (e.touches.length === 1 && isDrawing && !isPanning) {
       // Single touch = drawing (only if not panning)
       const canvas = canvasRef.current;
@@ -758,7 +689,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     lastTouchCenterRef.current = null;
     lastPointRef.current = null;
     lastTimeRef.current = 0;
-    setDebugInfo(''); // Clear debug info when touch ends
   };
 
   // Handle wheel events for trackpad two-finger panning and zoom
@@ -788,21 +718,20 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       const mouseX = e.clientX;
       const mouseY = e.clientY;
       
-      // Calculate base position directly from canvasSize
       // Container CSS: left: -canvasSize/3, top: -canvasSize/3
       const containerLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
       const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
-      
-      // With scale-then-translate transform:
-      // screenX = containerLeft + cx * zoom + offset.x
-      // Therefore: cx = (screenX - containerLeft - offset.x) / zoom
-      const canvasX = (mouseX - containerLeft - canvasOffset.x) / zoom;
-      const canvasY = (mouseY - containerTop - canvasOffset.y) / zoom;
-      
-      // Calculate new offset so same canvas point stays under cursor after zoom
-      // newOffsetX = mouseX - containerLeft - canvasX * newZoom
-      const newOffsetX = mouseX - containerLeft - canvasX * newZoom;
-      const newOffsetY = mouseY - containerTop - canvasY * newZoom;
+
+      // CSS transform: scale(zoom) translate(offset.x, offset.y), origin 0 0
+      // Screen position formula: screenX = containerLeft + (cx + offset.x) * zoom
+      // Therefore: cx = (screenX - containerLeft) / zoom - offset.x
+      const canvasX = (mouseX - containerLeft) / zoom - canvasOffset.x;
+      const canvasY = (mouseY - containerTop) / zoom - canvasOffset.y;
+
+      // New offset so same canvas point stays under cursor after zoom
+      // newOffset.x = (screenX - containerLeft) / newZoom - cx
+      const newOffsetX = (mouseX - containerLeft) / newZoom - canvasX;
+      const newOffsetY = (mouseY - containerTop) / newZoom - canvasY;
       
       setZoom(newZoom);
       setCanvasOffset({
@@ -1176,15 +1105,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
         touchAction: 'pan-x pan-y',
       }}
     >
-      {/* Debug overlay */}
-      {debugInfo && (
-        <div 
-          className="fixed top-4 left-4 bg-black/80 text-white text-xs p-3 z-50 font-mono whitespace-pre rounded"
-          style={{ pointerEvents: 'none' }}
-        >
-          {debugInfo}
-        </div>
-      )}
       {/* Drawing section */}
       <div 
         className="absolute w-screen h-screen overflow-hidden"
