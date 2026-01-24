@@ -61,7 +61,7 @@ export function Homepage() {
           alt="Shape"
           className="object-contain opacity-100 transition-opacity duration-500"
           style={{
-            width: isMobile ? '100vw' : '90vw',
+            width: isMobile ? '110vw' : '90vw',
             height: isMobile ? 'auto' : '90dvh',
           }}
         />
