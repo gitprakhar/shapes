@@ -1115,7 +1115,11 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
         {/* Bottom section: text left with buttons below, moves right */}
         <div
           className="absolute left-0 right-0 z-20 px-12 pointer-events-none"
-          style={{ bottom: '4rem' }} // Match homepage bottom padding
+          style={{
+            // Match homepage mobile bottom spacing: calc(5dvh + env(safe-area-inset-bottom))
+            // On desktop, keep a simple 4rem offset similar to bottom-16
+            bottom: isMobile ? 'calc(5dvh + env(safe-area-inset-bottom))' : '4rem',
+          }}
         >
           <div className="flex items-end justify-between">
             {/* Left: Text and buttons */}
