@@ -2,7 +2,8 @@ import { useRef, useState, useEffect } from 'react';
 
 const GAP = 40; // Gap between drawings
 const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing
-const SHAPES_PER_ROW = 5; // Number of shapes per row before wrapping
+const DESKTOP_SHAPES_PER_ROW = 5; // Desktop shapes per row
+const MOBILE_SHAPES_PER_ROW = 3;  // Mobile shapes per row
 
 interface Submission {
   id: string;
@@ -23,6 +24,7 @@ interface GalleryProps {
 
 export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -38,6 +40,13 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
 
   // Load all submissions from Supabase on mount and when submissions change
   useEffect(() => {
+    // Detect mobile for responsive grid (3 per row on mobile)
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768); // md breakpoint
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
     const loadSubmissions = async () => {
       try {
         const { supabase } = await import('@/lib/supabase');
@@ -136,7 +145,10 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
       loadSubmissions();
     }, 5000);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', checkMobile);
+    };
   }, []);
   
   // Calculate time remaining until midnight
@@ -169,9 +181,10 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     }
   }, [propSubmissions]);
 
-  // Calculate grid layout: 5 shapes per row
-  const numRows = Math.ceil(allSubmissions.length / SHAPES_PER_ROW);
-  const totalWidth = SHAPES_PER_ROW * DRAWING_DISPLAY_SIZE + (SHAPES_PER_ROW - 1) * GAP;
+  // Calculate grid layout: responsive shapes per row
+  const shapesPerRow = isMobile ? MOBILE_SHAPES_PER_ROW : DESKTOP_SHAPES_PER_ROW;
+  const numRows = Math.ceil(allSubmissions.length / shapesPerRow);
+  const totalWidth = shapesPerRow * DRAWING_DISPLAY_SIZE + (shapesPerRow - 1) * GAP;
   const totalHeight = numRows * DRAWING_DISPLAY_SIZE + (numRows - 1) * GAP;
 
   // Handle panning
@@ -526,9 +539,9 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
           }}
         >
           {allSubmissions.map((submission, index) => {
-            // Calculate row and column position
-            const row = Math.floor(index / SHAPES_PER_ROW);
-            const col = index % SHAPES_PER_ROW;
+            // Calculate row and column position (responsive: 3 per row on mobile, 5 on desktop)
+            const row = Math.floor(index / shapesPerRow);
+            const col = index % shapesPerRow;
             const x = col * (DRAWING_DISPLAY_SIZE + GAP);
             const y = row * (DRAWING_DISPLAY_SIZE + GAP);
             

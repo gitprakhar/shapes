@@ -1127,7 +1127,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
               <div className="font-sans font-normal pointer-events-none" style={{ color: '#232323' }}>
                 <div className="text-[28px] 2xl:text-[42px] mb-1">Draw and share</div>
                 <div className="text-[14px] 2xl:text-[21px]" style={{ lineHeight: '1.4' }}>
-                  Every day, a new shape.<br />
+                  There is a new shape every day.<br />
                   Draw something in 5 moves or less.<br />
                   Submit to see what others made.
                 </div>
