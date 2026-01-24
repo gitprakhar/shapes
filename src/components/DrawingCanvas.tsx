@@ -1164,8 +1164,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             {/* Left: Text and buttons */}
             <div className="flex flex-col">
               <div className="font-sans font-normal pointer-events-none" style={{ color: '#232323' }}>
-                <div className="text-[28px] mb-1">Draw and share</div>
-                <div className="text-[14px]" style={{ lineHeight: '1.4' }}>
+                <div className="text-[28px] 2xl:text-[42px] mb-1">Draw and share</div>
+                <div className="text-[14px] 2xl:text-[21px]" style={{ lineHeight: '1.4' }}>
                   Every day, a new shape.<br />
                   Draw something in 5 moves or less.<br />
                   Submit to see what others made.
@@ -1176,7 +1176,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
                 <button
                   onClick={handleReset}
                   disabled={moveCount === 0}
-                  className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
                 >
                   Reset Canvas
@@ -1184,7 +1184,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting || moveCount === 0}
-                  className="font-sans text-[16px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit'}
@@ -1194,7 +1194,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             
             {/* Right: Move counter */}
             <div 
-              className="font-sans text-[16px] font-normal pointer-events-none"
+              className="font-sans text-[16px] 2xl:text-[24px] font-normal pointer-events-none"
               style={{ color: '#232323' }}
             >
               {moveCount}/5 Moves

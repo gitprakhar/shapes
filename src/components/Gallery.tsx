@@ -300,8 +300,9 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
           zIndex: 1000,
         }}
       >
-        <div style={{ 
-          fontSize: '14px', 
+        <div 
+          className="text-[14px] 2xl:text-[21px]"
+          style={{ 
           color: '#232323', 
           fontFamily: 'var(--font-sans)',
           fontWeight: 'normal',
@@ -327,8 +328,8 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
       {allSubmissions.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center" style={{ color: '#232323' }}>
-            <div className="font-sans text-[24px] mb-2">No drawings yet</div>
-            <div className="font-sans text-[14px]">Submit a drawing to see it here</div>
+            <div className="font-sans text-[24px] 2xl:text-[36px] mb-2">No drawings yet</div>
+            <div className="font-sans text-[14px] 2xl:text-[21px]">Submit a drawing to see it here</div>
           </div>
         </div>
       ) : (
