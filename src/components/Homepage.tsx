@@ -80,7 +80,7 @@ export function Homepage() {
           </div>
 
           {/* Large text - mobile: left-aligned at bottom, desktop: 120px centered */}
-          <div className="absolute inset-0 flex items-end md:items-center justify-start md:justify-center z-1 px-6 md:px-12 pb-32 md:pb-0 md:pt-0">
+          <div className="absolute inset-0 flex items-end md:items-center justify-start md:justify-center z-1 px-12 pb-16 md:pb-0 md:pt-0">
             <div className="text-left md:text-center max-w-4xl" style={{ color: '#232323' }}>
               <div className="font-serif text-[80px] md:text-[120px] 2xl:text-[180px] font-normal leading-none tracking-tight pointer-events-none">
                 <em>draw anything*</em>
