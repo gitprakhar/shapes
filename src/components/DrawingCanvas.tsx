@@ -614,7 +614,9 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       if (lastTouchDistanceRef.current !== null) {
         const distanceDelta = distance - lastTouchDistanceRef.current;
         const zoomDelta = distanceDelta / 100; // Adjust sensitivity
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + zoomDelta));
+        const currentZoom = zoomRef.current;
+        const currentOffset = offsetRef.current;
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + zoomDelta));
         
         if (Math.abs(distanceDelta) > 5) {
           // Significant distance change = zoom towards center of pinch
@@ -643,8 +645,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
           // Find canvas coordinates under pinch center
           // screenX = baseLeft + canvasOffset.x + cx * zoom
           // Therefore: cx = (screenX - baseLeft - canvasOffset.x) / zoom
-          const canvasX = (screenX - baseLeft - canvasOffset.x) / zoom;
-          const canvasY = (screenY - baseTop - canvasOffset.y) / zoom;
+          const canvasX = (screenX - baseLeft - currentOffset.x) / currentZoom;
+          const canvasY = (screenY - baseTop - currentOffset.y) / currentZoom;
           
           // Calculate new offset so same canvas point stays under pinch center after zoom
           // newOffsetX = screenX - baseLeft - canvasX * newZoom
@@ -658,8 +660,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             `center: ${center.x.toFixed(0)}, ${center.y.toFixed(0)}\n` +
             `canvasSize: ${canvasSize}, vh: ${window.innerHeight}\n` +
             `baseLeft: ${baseLeft.toFixed(0)}, baseTop: ${baseTop.toFixed(0)}\n` +
-            `offset: ${canvasOffset.x.toFixed(0)}, ${canvasOffset.y.toFixed(0)}\n` +
-            `zoom: ${zoom.toFixed(2)}\n` +
+            `offset: ${currentOffset.x.toFixed(0)}, ${currentOffset.y.toFixed(0)}\n` +
+            `zoom: ${currentZoom.toFixed(2)}\n` +
             `canvasXY: ${canvasX.toFixed(0)}, ${canvasY.toFixed(0)}\n` +
             `newOffset: ${newOffsetX.toFixed(0)}, ${newOffsetY.toFixed(0)}`
           );
@@ -669,6 +671,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             x: newOffsetX,
             y: newOffsetY,
           });
+          zoomRef.current = newZoom;
+          offsetRef.current = { x: newOffsetX, y: newOffsetY };
           lastTouchDistanceRef.current = distance;
           return;
         }
