@@ -656,6 +656,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             `touch1: ${e.touches[0].clientX.toFixed(0)}, ${e.touches[0].clientY.toFixed(0)}\n` +
             `touch2: ${e.touches[1].clientX.toFixed(0)}, ${e.touches[1].clientY.toFixed(0)}\n` +
             `center: ${center.x.toFixed(0)}, ${center.y.toFixed(0)}\n` +
+            `canvasSize: ${canvasSize}, vh: ${window.innerHeight}\n` +
             `baseLeft: ${baseLeft.toFixed(0)}, baseTop: ${baseTop.toFixed(0)}\n` +
             `offset: ${canvasOffset.x.toFixed(0)}, ${canvasOffset.y.toFixed(0)}\n` +
             `zoom: ${zoom.toFixed(2)}\n` +
