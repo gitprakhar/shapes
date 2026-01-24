@@ -638,24 +638,26 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
           
           // Calculate base position directly from canvasSize (same as desktop)
           // Container CSS: left: -canvasSize/3, top: -canvasSize/3
-          const baseLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
-          const baseTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+          const containerLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+          const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
           
           // Calculate where the canvas center (where shape is drawn) appears on screen
-          const visualCenterX = baseLeft + currentOffset.x + (canvasSize / 2) * currentZoom;
-          const visualCenterY = baseTop + currentOffset.y + (canvasSize / 2) * currentZoom;
+          const visualCenterX = containerLeft + currentOffset.x + (canvasSize / 2) * currentZoom;
+          const visualCenterY = containerTop + currentOffset.y + (canvasSize / 2) * currentZoom;
           
-          // Match desktop zoom logic exactly:
-          // Find canvas coordinates under pinch center
-          // screenX = baseLeft + canvasOffset.x + cx * zoom
-          // Therefore: cx = (screenX - baseLeft - canvasOffset.x) / zoom
-          const canvasX = (screenX - baseLeft - currentOffset.x) / currentZoom;
-          const canvasY = (screenY - baseTop - currentOffset.y) / currentZoom;
+          // Zoom around point formula - accounts for container's CSS position
+          // Current visual position of container origin
+          const currentVisualX = containerLeft + currentOffset.x;
+          const currentVisualY = containerTop + currentOffset.y;
           
-          // Calculate new offset so same canvas point stays under pinch center after zoom
-          // newOffsetX = screenX - baseLeft - canvasX * newZoom
-          const newOffsetX = screenX - baseLeft - canvasX * newZoom;
-          const newOffsetY = screenY - baseTop - canvasY * newZoom;
+          // Scale the distance from touch center to container origin
+          const scaleRatio = newZoom / currentZoom;
+          const newVisualX = screenX - (screenX - currentVisualX) * scaleRatio;
+          const newVisualY = screenY - (screenY - currentVisualY) * scaleRatio;
+          
+          // Convert back to offset
+          const newOffsetX = newVisualX - containerLeft;
+          const newOffsetY = newVisualY - containerTop;
           
           // Debug overlay
           setDebugInfo(
@@ -663,11 +665,13 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             `touch2: ${e.touches[1].clientX.toFixed(0)}, ${e.touches[1].clientY.toFixed(0)}\n` +
             `center: ${center.x.toFixed(0)}, ${center.y.toFixed(0)}\n` +
             `canvasSize: ${canvasSize}, vh: ${window.innerHeight}\n` +
-            `baseLeft: ${baseLeft.toFixed(0)}, baseTop: ${baseTop.toFixed(0)}\n` +
+            `containerLeft: ${containerLeft.toFixed(0)}, containerTop: ${containerTop.toFixed(0)}\n` +
+            `currentVisual: ${currentVisualX.toFixed(0)}, ${currentVisualY.toFixed(0)}\n` +
             `offset: ${currentOffset.x.toFixed(0)}, ${currentOffset.y.toFixed(0)}\n` +
-            `zoom: ${currentZoom.toFixed(2)}\n` +
+            `zoom: ${currentZoom.toFixed(2)} -> ${newZoom.toFixed(2)}\n` +
+            `scaleRatio: ${scaleRatio.toFixed(3)}\n` +
             `visualCenter: ${visualCenterX.toFixed(0)}, ${visualCenterY.toFixed(0)}\n` +
-            `canvasXY: ${canvasX.toFixed(0)}, ${canvasY.toFixed(0)}\n` +
+            `newVisual: ${newVisualX.toFixed(0)}, ${newVisualY.toFixed(0)}\n` +
             `newOffset: ${newOffsetX.toFixed(0)}, ${newOffsetY.toFixed(0)}`
           );
           
