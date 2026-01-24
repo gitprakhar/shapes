@@ -524,6 +524,11 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       e.nativeEvent.preventDefault();
       e.nativeEvent.stopImmediatePropagation();
       
+      // Stop any active drawing immediately
+      if (isDrawing) {
+        setIsDrawing(false);
+      }
+      
       // Prevent browser swipe navigation
       if (e.nativeEvent.cancelable) {
         e.nativeEvent.preventDefault();
@@ -537,7 +542,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
         x: center.x - canvasOffset.x,
         y: center.y - canvasOffset.y,
       });
-    } else if (e.touches.length === 1) {
+    } else if (e.touches.length === 1 && !isPanning) {
       // Single touch = drawing
       // Check if user has reached the move limit
       if (moveCount >= 5) return;
@@ -581,7 +586,25 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isDrawingEnabled) return;
     
-    if (e.touches.length === 2 && isPanning) {
+    // If two fingers are on screen, stop drawing immediately and only handle panning/zooming
+    if (e.touches.length === 2) {
+      // Stop any active drawing
+      if (isDrawing) {
+        setIsDrawing(false);
+      }
+      
+      // Initialize panning if not already
+      if (!isPanning) {
+        setIsPanning(true);
+        const distance = getTouchDistance(e.touches[0], e.touches[1]);
+        const center = getTouchCenter(e.touches[0], e.touches[1]);
+        lastTouchDistanceRef.current = distance;
+        lastTouchCenterRef.current = center;
+        setPanStart({
+          x: center.x - canvasOffset.x,
+          y: center.y - canvasOffset.y,
+        });
+      }
       // Two-finger gesture - prevent browser navigation/zoom
       e.preventDefault();
       e.stopPropagation();
@@ -650,8 +673,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       });
       
       lastTouchDistanceRef.current = distance;
-    } else if (e.touches.length === 1 && isDrawing) {
-      // Single touch = drawing
+    } else if (e.touches.length === 1 && isDrawing && !isPanning) {
+      // Single touch = drawing (only if not panning)
       const canvas = canvasRef.current;
       if (!canvas) return;
       
