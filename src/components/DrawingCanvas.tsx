@@ -291,26 +291,21 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       const gestureX = gestureEvent.clientX !== undefined ? gestureEvent.clientX : viewportWidth / 2;
       const gestureY = gestureEvent.clientY !== undefined ? gestureEvent.clientY : viewportHeight / 2;
       
-      // Get the container element to calculate proper coordinates
-      // The container is the parent of the canvas
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const container = canvas.parentElement;
-      if (!container) return;
+      // Calculate base position directly from canvasSize
+      // Container CSS: left: -canvasSize/3, top: -canvasSize/3
+      const baseLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+      const baseTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
       
-      const containerRect = container.getBoundingClientRect();
+      // Find canvas coordinates under gesture center
+      // screenX = baseLeft + canvasOffset.x + cx * zoom
+      // Therefore: cx = (screenX - baseLeft - canvasOffset.x) / zoom
+      const canvasX = (gestureX - baseLeft - currentOffset.x) / currentZoom;
+      const canvasY = (gestureY - baseTop - currentOffset.y) / currentZoom;
       
-      // Calculate gesture position relative to container's current position
-      const mouseRelX = gestureX - containerRect.left;
-      const mouseRelY = gestureY - containerRect.top;
-      
-      // Calculate the point in canvas space (before zoom)
-      const canvasX = (mouseRelX - currentOffset.x) / currentZoom;
-      const canvasY = (mouseRelY - currentOffset.y) / currentZoom;
-      
-      // Adjust canvasOffset so that canvasPoint appears at the same screen position after zoom
-      const newOffsetX = mouseRelX - canvasX * newZoom;
-      const newOffsetY = mouseRelY - canvasY * newZoom;
+      // Calculate new offset so same canvas point stays under gesture center after zoom
+      // newOffsetX = gestureX - baseLeft - canvasX * newZoom
+      const newOffsetX = gestureX - baseLeft - canvasX * newZoom;
+      const newOffsetY = gestureY - baseTop - canvasY * newZoom;
       
       setZoom(newZoom);
       setCanvasOffset({
@@ -626,27 +621,21 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
           const centerX = center.x;
           const centerY = center.y;
           
-          // Get the container element to calculate proper coordinates
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          const container = canvas.parentElement;
-          if (!container) return;
+          // Calculate base position directly from canvasSize
+          // Container CSS: left: -canvasSize/3, top: -canvasSize/3
+          const baseLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+          const baseTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
           
-          const containerRect = container.getBoundingClientRect();
+          // Find canvas coordinates under pinch center
+          // screenX = baseLeft + canvasOffset.x + cx * zoom
+          // Therefore: cx = (screenX - baseLeft - canvasOffset.x) / zoom
+          const canvasX = (centerX - baseLeft - canvasOffset.x) / zoom;
+          const canvasY = (centerY - baseTop - canvasOffset.y) / zoom;
           
-          // Calculate center position relative to container's current position
-          const centerRelX = centerX - containerRect.left;
-          const centerRelY = centerY - containerRect.top;
-          
-          // Calculate the center position in canvas space (before zoom)
-          // canvasPoint = (centerPos - canvasOffset) / currentZoom
-          const canvasX = (centerRelX - canvasOffset.x) / zoom;
-          const canvasY = (centerRelY - canvasOffset.y) / zoom;
-          
-          // Adjust canvasOffset so that canvasPoint appears at the same screen position after zoom
-          // newCanvasOffset = centerPos - (canvasPoint * newZoom)
-          const newOffsetX = centerRelX - canvasX * newZoom;
-          const newOffsetY = centerRelY - canvasY * newZoom;
+          // Calculate new offset so same canvas point stays under pinch center after zoom
+          // newOffsetX = centerX - baseLeft - canvasX * newZoom
+          const newOffsetX = centerX - baseLeft - canvasX * newZoom;
+          const newOffsetY = centerY - baseTop - canvasY * newZoom;
           
           setZoom(newZoom);
           setCanvasOffset({
@@ -762,25 +751,21 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       const mouseX = e.clientX;
       const mouseY = e.clientY;
       
-      // Get the container element to calculate proper coordinates
-      // The container is the element that the wheel event is attached to
-      const container = e.currentTarget;
-      const containerRect = container.getBoundingClientRect();
+      // Calculate base position directly from canvasSize
+      // Container CSS: left: -canvasSize/3, top: -canvasSize/3
+      const baseLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+      const baseTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
       
-      // Calculate mouse position relative to container's current position
-      // getBoundingClientRect() already accounts for the CSS transform (translate + scale)
-      const mouseRelX = mouseX - containerRect.left;
-      const mouseRelY = mouseY - containerRect.top;
+      // Find canvas coordinates under cursor
+      // screenX = baseLeft + canvasOffset.x + cx * zoom
+      // Therefore: cx = (screenX - baseLeft - canvasOffset.x) / zoom
+      const canvasX = (mouseX - baseLeft - canvasOffset.x) / zoom;
+      const canvasY = (mouseY - baseTop - canvasOffset.y) / zoom;
       
-      // Calculate the point in canvas space (before zoom)
-      // canvasPoint = (mousePos - canvasOffset) / currentZoom
-      const canvasX = (mouseRelX - canvasOffset.x) / zoom;
-      const canvasY = (mouseRelY - canvasOffset.y) / zoom;
-      
-      // Adjust canvasOffset so that canvasPoint appears at the same screen position after zoom
-      // newCanvasOffset = mousePos - (canvasPoint * newZoom)
-      const newOffsetX = mouseRelX - canvasX * newZoom;
-      const newOffsetY = mouseRelY - canvasY * newZoom;
+      // Calculate new offset so same canvas point stays under cursor after zoom
+      // newOffsetX = mouseX - baseLeft - canvasX * newZoom
+      const newOffsetX = mouseX - baseLeft - canvasX * newZoom;
+      const newOffsetY = mouseY - baseTop - canvasY * newZoom;
       
       setZoom(newZoom);
       setCanvasOffset({
