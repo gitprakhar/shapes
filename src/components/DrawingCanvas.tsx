@@ -246,21 +246,50 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   useEffect(() => {
     if (!isDrawingEnabled) return;
 
-    const preventBrowserZoom = (e: WheelEvent | TouchEvent) => {
-      // Prevent browser zoom when ctrl/cmd is pressed - we handle zoom ourselves
-      if (e instanceof WheelEvent) {
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }
-      } else if (e instanceof TouchEvent) {
-        // Prevent pinch-to-zoom on touch devices
-        if (e.touches.length === 2) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }
+    const handleWheelEvent = (e: WheelEvent) => {
+      e.preventDefault();
+
+      const containerLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+      const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
+
+      if (e.ctrlKey || e.metaKey) {
+        // Zoom towards cursor
+        const currentZoom = zoomRef.current;
+        const currentOffset = offsetRef.current;
+        const mouseX = e.clientX;
+        const mouseY = e.clientY;
+
+        const zoomSensitivity = 0.005;
+        const zoomDelta = -e.deltaY * zoomSensitivity;
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + zoomDelta));
+
+        const canvasX = (mouseX - containerLeft) / currentZoom - currentOffset.x;
+        const canvasY = (mouseY - containerTop) / currentZoom - currentOffset.y;
+
+        const newOffsetX = (mouseX - containerLeft) / newZoom - canvasX;
+        const newOffsetY = (mouseY - containerTop) / newZoom - canvasY;
+
+        zoomRef.current = newZoom;
+        offsetRef.current = { x: newOffsetX, y: newOffsetY };
+        setZoom(newZoom);
+        setCanvasOffset({ x: newOffsetX, y: newOffsetY });
+      } else {
+        // Pan - offset is in scaled space, so divide delta by zoom
+        const currentZoom = zoomRef.current;
+        const currentOffset = offsetRef.current;
+        const newOffset = {
+          x: currentOffset.x - e.deltaX / currentZoom,
+          y: currentOffset.y - e.deltaY / currentZoom,
+        };
+        offsetRef.current = newOffset;
+        setCanvasOffset(newOffset);
+      }
+    };
+
+    const preventTouchZoom = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        e.stopPropagation();
       }
     };
 
@@ -335,19 +364,18 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       }
     };
 
-    // Use passive: false to allow preventDefault
-    document.addEventListener('wheel', preventBrowserZoom as EventListener, { passive: false });
-    document.addEventListener('touchstart', preventBrowserZoom as EventListener, { passive: false });
-    document.addEventListener('touchmove', preventBrowserZoom as EventListener, { passive: false });
+    document.addEventListener('wheel', handleWheelEvent, { passive: false });
+    document.addEventListener('touchstart', preventTouchZoom, { passive: false });
+    document.addEventListener('touchmove', preventTouchZoom, { passive: false });
     document.addEventListener('touchmove', preventSwipeNavigation as EventListener, { passive: false });
     document.addEventListener('gesturestart', handleGestureStart, { passive: false });
     document.addEventListener('gesturechange', handleGestureChange, { passive: false });
     document.addEventListener('gestureend', handleGestureEnd, { passive: false });
 
     return () => {
-      document.removeEventListener('wheel', preventBrowserZoom as EventListener);
-      document.removeEventListener('touchstart', preventBrowserZoom as EventListener);
-      document.removeEventListener('touchmove', preventBrowserZoom as EventListener);
+      document.removeEventListener('wheel', handleWheelEvent);
+      document.removeEventListener('touchstart', preventTouchZoom);
+      document.removeEventListener('touchmove', preventTouchZoom);
       document.removeEventListener('touchmove', preventSwipeNavigation as EventListener);
       document.removeEventListener('gesturestart', handleGestureStart);
       document.removeEventListener('gesturechange', handleGestureChange);
@@ -515,23 +543,12 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     if (!isDrawingEnabled) return;
     
     if (e.touches.length === 2) {
-      // Two-finger panning - prevent browser zoom and navigation
-      e.preventDefault();
-      e.stopPropagation();
-      e.nativeEvent.preventDefault();
-      e.nativeEvent.stopImmediatePropagation();
-
       // Cancel any pending touch (second finger arrived before draw committed)
       pendingTouchRef.current = null;
 
       // Stop any active drawing immediately
       if (isDrawing) {
         setIsDrawing(false);
-      }
-      
-      // Prevent browser swipe navigation
-      if (e.nativeEvent.cancelable) {
-        e.nativeEvent.preventDefault();
       }
       setIsPanning(true);
       const distance = getTouchDistance(e.touches[0], e.touches[1]);
@@ -580,12 +597,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       if (isDrawing) {
         setIsDrawing(false);
       }
-
-      // Two-finger gesture - prevent browser navigation/zoom
-      e.preventDefault();
-      e.stopPropagation();
-      e.nativeEvent.preventDefault();
-      e.nativeEvent.stopImmediatePropagation();
 
       // Initialize tracking on first two-finger detection
       if (!isPanning || lastTouchDistanceRef.current === null || lastTouchCenterRef.current === null) {
@@ -717,62 +728,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     lastTimeRef.current = 0;
   };
 
-  // Handle wheel events for trackpad two-finger panning and zoom
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (!isDrawingEnabled) return;
-    
-    // Always prevent default to stop browser zoom and navigation
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Additional prevention for zoom gestures
-    if (e.ctrlKey || e.metaKey) {
-      e.nativeEvent.preventDefault();
-      e.nativeEvent.stopImmediatePropagation();
-    }
-    
-    // Check if ctrl/cmd is pressed for zoom (trackpad pinch or cmd+scroll)
-    if (e.ctrlKey || e.metaKey) {
-      // For trackpad pinch, deltaY is the zoom amount
-      // Use a more sensitive zoom calculation that responds to deltaY directly
-      // Negative deltaY = zoom in, positive deltaY = zoom out
-      const zoomSensitivity = 0.001; // Adjust for smooth trackpad zoom
-      const zoomDelta = -e.deltaY * zoomSensitivity; // Invert: negative delta = zoom in
-      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + zoomDelta));
-      
-      // Get mouse position relative to viewport
-      const mouseX = e.clientX;
-      const mouseY = e.clientY;
-      
-      // Container CSS: left: -canvasSize/3, top: -canvasSize/3
-      const containerLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
-      const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
-
-      // CSS transform: scale(zoom) translate(offset.x, offset.y), origin 0 0
-      // Screen position formula: screenX = containerLeft + (cx + offset.x) * zoom
-      // Therefore: cx = (screenX - containerLeft) / zoom - offset.x
-      const canvasX = (mouseX - containerLeft) / zoom - canvasOffset.x;
-      const canvasY = (mouseY - containerTop) / zoom - canvasOffset.y;
-
-      // New offset so same canvas point stays under cursor after zoom
-      // newOffset.x = (screenX - containerLeft) / newZoom - cx
-      const newOffsetX = (mouseX - containerLeft) / newZoom - canvasX;
-      const newOffsetY = (mouseY - containerTop) / newZoom - canvasY;
-      
-      setZoom(newZoom);
-      setCanvasOffset({
-        x: newOffsetX,
-        y: newOffsetY,
-      });
-    } else {
-      // Pan the canvas (no modifier key)
-      // Offset is in scaled space (CSS: scale then translate), so divide delta by zoom
-      setCanvasOffset(prev => ({
-        x: prev.x - e.deltaX / zoom,
-        y: prev.y - e.deltaY / zoom,
-      }));
-    }
-  };
 
   // Start drawing - mouse click and drag
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1217,7 +1172,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          onWheel={handleWheel}
         >
           {/* Shape canvas (base layer) - displays default shape */}
           <canvas

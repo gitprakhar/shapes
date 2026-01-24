@@ -31,6 +31,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const offsetRef = useRef({ x: 0, y: 0 });
   const lastTouchDistanceRef = useRef<number | null>(null);
   const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const lastGestureScaleRef = useRef<number>(1);
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
@@ -261,40 +262,114 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   useEffect(() => { offsetRef.current = offset; }, [offset]);
 
-  // Handle wheel: Ctrl/Cmd+scroll = zoom, plain scroll = pan
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
+  // Prevent browser zoom and handle wheel/gesture events at document level
+  // This ensures Safari can't intercept events on child elements (images)
+  useEffect(() => {
+    const handleWheelEvent = (e: WheelEvent) => {
+      e.preventDefault();
 
-    if (e.ctrlKey || e.metaKey) {
-      // Zoom towards mouse position
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+      if (e.ctrlKey || e.metaKey) {
+        // Zoom towards cursor
+        const currentZoom = zoomRef.current;
+        const currentOffset = offsetRef.current;
+        const mouseX = e.clientX;
+        const mouseY = e.clientY;
 
         const zoomSensitivity = 0.005;
         const zoomDelta = -e.deltaY * zoomSensitivity;
-        const newZoom = Math.max(0.1, Math.min(2, zoom + zoomDelta));
+        const newZoom = Math.max(0.1, Math.min(2, currentZoom + zoomDelta));
 
-        // Transform: translate(offset) scale(zoom), origin top-left
-        // screenX = offset.x + cx * zoom
-        const canvasX = (mouseX - offset.x) / zoom;
-        const canvasY = (mouseY - offset.y) / zoom;
+        const canvasX = (mouseX - currentOffset.x) / currentZoom;
+        const canvasY = (mouseY - currentOffset.y) / currentZoom;
 
         const newOffsetX = mouseX - canvasX * newZoom;
         const newOffsetY = mouseY - canvasY * newZoom;
 
+        zoomRef.current = newZoom;
+        offsetRef.current = { x: newOffsetX, y: newOffsetY };
         setZoom(newZoom);
         setOffset({ x: newOffsetX, y: newOffsetY });
+      } else {
+        // Pan
+        const currentOffset = offsetRef.current;
+        const newOffset = {
+          x: currentOffset.x - e.deltaX,
+          y: currentOffset.y - e.deltaY,
+        };
+        offsetRef.current = newOffset;
+        setOffset(newOffset);
       }
-    } else {
-      // Pan the canvas
-      setOffset(prev => ({
-        x: prev.x - e.deltaX,
-        y: prev.y - e.deltaY,
-      }));
-    }
-  };
+    };
+
+    const preventTouchZoom = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    const handleGestureStart = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const gestureEvent = e as any;
+      if (gestureEvent.scale !== undefined) {
+        lastGestureScaleRef.current = gestureEvent.scale;
+      }
+    };
+
+    const handleGestureChange = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const gestureEvent = e as any;
+      if (gestureEvent.scale === undefined) return;
+
+      const currentScale = gestureEvent.scale;
+      const scaleDelta = currentScale / lastGestureScaleRef.current;
+      const currentZoom = zoomRef.current;
+      const currentOffset = offsetRef.current;
+      const newZoom = Math.max(0.1, Math.min(2, currentZoom * scaleDelta));
+
+      const gestureX = gestureEvent.clientX !== undefined ? gestureEvent.clientX : window.innerWidth / 2;
+      const gestureY = gestureEvent.clientY !== undefined ? gestureEvent.clientY : window.innerHeight / 2;
+
+      const canvasX = (gestureX - currentOffset.x) / currentZoom;
+      const canvasY = (gestureY - currentOffset.y) / currentZoom;
+
+      const newOffsetX = gestureX - canvasX * newZoom;
+      const newOffsetY = gestureY - canvasY * newZoom;
+
+      zoomRef.current = newZoom;
+      offsetRef.current = { x: newOffsetX, y: newOffsetY };
+      lastGestureScaleRef.current = currentScale;
+
+      setZoom(newZoom);
+      setOffset({ x: newOffsetX, y: newOffsetY });
+    };
+
+    const handleGestureEnd = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      lastGestureScaleRef.current = 1;
+    };
+
+    document.addEventListener('wheel', handleWheelEvent, { passive: false });
+    document.addEventListener('touchstart', preventTouchZoom, { passive: false });
+    document.addEventListener('touchmove', preventTouchZoom, { passive: false });
+    document.addEventListener('gesturestart', handleGestureStart, { passive: false });
+    document.addEventListener('gesturechange', handleGestureChange, { passive: false });
+    document.addEventListener('gestureend', handleGestureEnd, { passive: false });
+
+    return () => {
+      document.removeEventListener('wheel', handleWheelEvent);
+      document.removeEventListener('touchstart', preventTouchZoom);
+      document.removeEventListener('touchmove', preventTouchZoom);
+      document.removeEventListener('gesturestart', handleGestureStart);
+      document.removeEventListener('gesturechange', handleGestureChange);
+      document.removeEventListener('gestureend', handleGestureEnd);
+    };
+  }, []);
+
 
   // Touch handlers for mobile pinch-to-zoom and two-finger pan
   const getTouchDistance = (t1: React.Touch, t2: React.Touch) =>
@@ -376,12 +451,12 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
         cursor: isPanning ? 'grabbing' : 'grab',
         backgroundColor: '#F1F1F1',
         userSelect: 'none',
+        touchAction: 'none',
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
