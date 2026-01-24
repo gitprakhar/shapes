@@ -617,25 +617,38 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
         
         if (Math.abs(distanceDelta) > 5) {
           // Significant distance change = zoom towards center of pinch
-          // Get center point between two touches (in viewport coordinates)
-          const centerX = center.x;
-          const centerY = center.y;
+          // Get center point between two touches (clientX/clientY are viewport coordinates)
+          const touchCenterX = center.x;
+          const touchCenterY = center.y;
           
-          // Calculate base position directly from canvasSize
+          // Get the canvas container to check for any viewport offset
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const container = canvas.parentElement;
+          if (!container) return;
+          
+          // clientX/clientY are already relative to viewport, but check if container has offset
+          // For consistency with desktop (which uses e.clientX directly), use touch coordinates as-is
+          // screenX and screenY are the viewport coordinates where we want to zoom
+          const screenX = touchCenterX;
+          const screenY = touchCenterY;
+          
+          // Calculate base position directly from canvasSize (same as desktop)
           // Container CSS: left: -canvasSize/3, top: -canvasSize/3
           const baseLeft = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
           const baseTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
           
+          // Match desktop zoom logic exactly:
           // Find canvas coordinates under pinch center
           // screenX = baseLeft + canvasOffset.x + cx * zoom
           // Therefore: cx = (screenX - baseLeft - canvasOffset.x) / zoom
-          const canvasX = (centerX - baseLeft - canvasOffset.x) / zoom;
-          const canvasY = (centerY - baseTop - canvasOffset.y) / zoom;
+          const canvasX = (screenX - baseLeft - canvasOffset.x) / zoom;
+          const canvasY = (screenY - baseTop - canvasOffset.y) / zoom;
           
           // Calculate new offset so same canvas point stays under pinch center after zoom
-          // newOffsetX = centerX - baseLeft - canvasX * newZoom
-          const newOffsetX = centerX - baseLeft - canvasX * newZoom;
-          const newOffsetY = centerY - baseTop - canvasY * newZoom;
+          // newOffsetX = screenX - baseLeft - canvasX * newZoom
+          const newOffsetX = screenX - baseLeft - canvasX * newZoom;
+          const newOffsetY = screenY - baseTop - canvasY * newZoom;
           
           setZoom(newZoom);
           setCanvasOffset({
