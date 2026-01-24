@@ -35,12 +35,12 @@ export function Homepage() {
 
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ backgroundColor: '#F1F1F1' }}>
-      {/* Single infinite canvas container - 400vh tall (200vh for homepage + 200vh for drawing) */}
+      {/* Single infinite canvas container - 400dvh tall (200vh for homepage + 200vh for drawing) */}
       <div
         className="absolute"
         style={{
-          width: '100vh',
-          height: '400vh',
+          width: '100dvh',
+          height: '400dvh',
           left: 0,
           top: 0,
         }}
@@ -74,7 +74,7 @@ export function Homepage() {
               className="object-contain opacity-100 transition-opacity duration-500"
               style={{
                 width: isMobile ? '100vw' : '90vw',
-                height: isMobile ? 'auto' : '90vh',
+                height: isMobile ? 'auto' : '90dvh',
               }}
             />
           </div>
