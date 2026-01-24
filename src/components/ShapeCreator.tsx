@@ -275,7 +275,7 @@ export function ShapeCreator({ onSave, onBack }: ShapeCreatorProps) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Convert to image data URL
+    // Convert to image data URL at full size (800x800)
     const imageData = canvas.toDataURL('image/png');
     
     try {

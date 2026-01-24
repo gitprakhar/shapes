@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
 
-const SUBMISSIONS_STORAGE_KEY = 'drawingSubmissions';
 const GAP = 40; // Gap between drawings
-const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing (much smaller than full canvas)
+const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing
+const SHAPES_PER_ROW = 5; // Number of shapes per row before wrapping
 
 interface Submission {
   id: string;
@@ -26,9 +26,10 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
 
-  // Load all submissions from Supabase on mount
+  // Load all submissions from Supabase on mount and when submissions change
   useEffect(() => {
     const loadSubmissions = async () => {
       try {
@@ -45,68 +46,90 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
         if (shapeError) {
           console.error('Error fetching daily shape:', shapeError);
           console.error('Shape error details:', JSON.stringify(shapeError, null, 2));
-          // Fallback to localStorage
-          const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            setAllSubmissions(parsed);
-          }
+          setAllSubmissions([]);
           return;
         }
         
-        if (!dailyShape) {
-          console.warn('No daily shape found for today');
-          // Fallback to localStorage
-          const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            setAllSubmissions(parsed);
-          }
-          return;
-        }
+        // Load drawings - if daily shape exists, filter by it, otherwise show all recent drawings
+        let drawings;
+        let drawingsError;
         
-        // Load all drawings for today's shape
-        const { data: drawings, error: drawingsError } = await supabase
-          .from('user_drawings')
-          .select('*')
-          .eq('daily_shape_id', dailyShape.id)
-          .order('created_at', { ascending: true });
+        if (dailyShape) {
+          console.log('Daily shape ID:', dailyShape.id);
+          console.log('Daily shape ID type:', typeof dailyShape.id);
+          
+          // Load all drawings for today's shape
+          const result = await supabase
+            .from('user_drawings')
+            .select('id, daily_shape_id, drawing_paths, created_at')
+            .eq('daily_shape_id', dailyShape.id)
+            .order('created_at', { ascending: true });
+          
+          drawings = result.data;
+          drawingsError = result.error;
+        } else {
+          console.warn('No daily shape found for today, loading all recent drawings');
+          
+          // Load all recent drawings if no daily shape exists
+          const result = await supabase
+            .from('user_drawings')
+            .select('id, daily_shape_id, drawing_paths, created_at')
+            .order('created_at', { ascending: false })
+            .limit(100); // Limit to most recent 100 drawings
+          
+          drawings = result.data;
+          drawingsError = result.error;
+        }
         
         if (drawingsError) {
           console.error('Error loading drawings:', drawingsError);
           console.error('Drawings error details:', JSON.stringify(drawingsError, null, 2));
-          throw drawingsError;
+          setAllSubmissions([]);
+          return;
         }
         
-        // Convert Supabase format to Submission format
-        const submissions: Submission[] = (drawings || []).map((drawing) => ({
-          id: drawing.id,
-          svgString: drawing.drawing_paths?.svgString,
-          imageData: drawing.drawing_paths?.imageData,
-          drawingPaths: drawing.drawing_paths?.drawingPaths,
-          author: 'User', // Could be enhanced with user auth later
-          note: '',
-          x: 0,
-          y: 0,
-        }));
+        console.log('Loaded drawings from Supabase:', drawings);
+        console.log('Number of drawings found:', drawings?.length || 0);
         
+        // Convert Supabase format to Submission format
+        const submissions: Submission[] = (drawings || []).map((drawing: any) => {
+          // Handle both possible structures: drawing_paths as object or direct properties
+          const drawingPaths = typeof drawing.drawing_paths === 'object' && drawing.drawing_paths !== null
+            ? drawing.drawing_paths
+            : {};
+          
+          const submission = {
+            id: drawing.id,
+            svgString: drawingPaths.svgString,
+            imageData: drawingPaths.imageData,
+            drawingPaths: drawingPaths.drawingPaths,
+            author: 'User', // Could be enhanced with user auth later
+            note: '',
+            x: 0,
+            y: 0,
+          };
+          
+          console.log('Processed submission:', { id: submission.id, hasSvgString: !!submission.svgString, hasImageData: !!submission.imageData });
+          
+          return submission;
+        });
+        
+        console.log('Final submissions array:', submissions);
         setAllSubmissions(submissions);
       } catch (error) {
         console.error('Failed to load submissions from Supabase:', error);
-        // Fallback to localStorage
-        try {
-          const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            setAllSubmissions(parsed);
-          }
-        } catch (localError) {
-          console.error('Failed to load from localStorage:', localError);
-        }
+        setAllSubmissions([]);
       }
     };
     
     loadSubmissions();
+    
+    // Refresh every 5 seconds to get new submissions
+    const interval = setInterval(() => {
+      loadSubmissions();
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Update when propSubmissions change (new submission added)
@@ -116,24 +139,63 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     }
   }, [propSubmissions]);
 
+  // Calculate grid layout: 5 shapes per row
+  const numRows = Math.ceil(allSubmissions.length / SHAPES_PER_ROW);
+  const totalWidth = SHAPES_PER_ROW * DRAWING_DISPLAY_SIZE + (SHAPES_PER_ROW - 1) * GAP;
+  const totalHeight = numRows * DRAWING_DISPLAY_SIZE + (numRows - 1) * GAP;
+
   // Handle panning
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) {
       setIsPanning(true);
+      // Store the initial mouse position (absolute screen coordinates)
       setPanStart({
-        x: e.clientX - offset.x,
-        y: e.clientY - offset.y,
+        x: e.clientX,
+        y: e.clientY,
       });
       e.preventDefault();
+      e.stopPropagation();
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning) {
+      // Calculate the delta from where we started dragging
+      const deltaX = e.clientX - panStart.x;
+      const deltaY = e.clientY - panStart.y;
+      
+      // Apply the delta to the current offset
+      const newX = offset.x + deltaX;
+      const newY = offset.y + deltaY;
+      
+      // Constrain panning to canvas bounds (accounting for zoom)
+      const scaledWidth = totalWidth * zoom;
+      const scaledHeight = totalHeight * zoom;
+      const maxX = 0; // Can't pan right beyond left edge
+      const minX = window.innerWidth - scaledWidth; // Can't pan left beyond right edge
+      const maxY = 0; // Can't pan down beyond top edge
+      const minY = window.innerHeight - scaledHeight; // Can't pan up beyond bottom edge
+      
+      // Only constrain if canvas is larger than viewport
+      const constrainedX = scaledWidth > window.innerWidth 
+        ? Math.max(minX, Math.min(maxX, newX))
+        : newX;
+      const constrainedY = scaledHeight > window.innerHeight
+        ? Math.max(minY, Math.min(maxY, newY))
+        : newY;
+      
       setOffset({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
+        x: constrainedX,
+        y: constrainedY,
       });
+      
+      // Update panStart to current position for smooth continuous dragging
+      setPanStart({
+        x: e.clientX,
+        y: e.clientY,
+      });
+      
+      e.preventDefault();
     }
   };
 
@@ -141,20 +203,54 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     setIsPanning(false);
   };
 
-  // Calculate total width needed - canvas grows with number of submissions
-  const totalWidth = allSubmissions.length > 0
-    ? allSubmissions.length * DRAWING_DISPLAY_SIZE + (allSubmissions.length - 1) * GAP
-    : DRAWING_DISPLAY_SIZE;
-  const totalHeight = DRAWING_DISPLAY_SIZE;
-
-  // Initialize offset to center the canvas in viewport
+  // Calculate initial zoom to fit all shapes in viewport
   useEffect(() => {
-    if (allSubmissions.length > 0 && offset.x === 0 && offset.y === 0) {
-      const centerX = Math.max(0, (window.innerWidth - totalWidth) / 2);
-      const centerY = Math.max(0, (window.innerHeight - totalHeight) / 2);
+    if (allSubmissions.length > 0 && containerRef.current) {
+      const containerWidth = window.innerWidth;
+      const containerHeight = window.innerHeight;
+      
+      // Calculate zoom to fit all shapes with some padding
+      const padding = 80; // Padding on each side
+      const availableWidth = containerWidth - padding * 2;
+      const availableHeight = containerHeight - padding * 2;
+      
+      const zoomX = availableWidth / totalWidth;
+      const zoomY = availableHeight / totalHeight;
+      const initialZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 1x
+      
+      setZoom(initialZoom);
+      
+      // Center the canvas
+      const scaledWidth = totalWidth * initialZoom;
+      const scaledHeight = totalHeight * initialZoom;
+      const centerX = (containerWidth - scaledWidth) / 2;
+      const centerY = (containerHeight - scaledHeight) / 2;
       setOffset({ x: centerX, y: centerY });
     }
   }, [allSubmissions.length, totalWidth, totalHeight]);
+  
+  // Handle zoom with mouse wheel
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      
+      // Zoom in/out
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.1, Math.min(2, zoom * zoomFactor));
+      
+      // Zoom towards mouse position
+      const zoomChange = newZoom / zoom;
+      const newOffsetX = mouseX - (mouseX - offset.x) * zoomChange;
+      const newOffsetY = mouseY - (mouseY - offset.y) * zoomChange;
+      
+      setZoom(newZoom);
+      setOffset({ x: newOffsetX, y: newOffsetY });
+    }
+  };
 
   return (
     <div
@@ -169,6 +265,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onWheel={handleWheel}
     >
       {/* Dot grid background */}
       <div
@@ -195,19 +292,22 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
             height: `${totalHeight}px`,
             left: 0,
             top: 0,
-            transform: `translate(${offset.x}px, ${offset.y}px)`,
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+            transformOrigin: 'top left',
           }}
         >
           {allSubmissions.map((submission, index) => {
-            const x = index * (DRAWING_DISPLAY_SIZE + GAP);
+            // Calculate row and column position
+            const row = Math.floor(index / SHAPES_PER_ROW);
+            const col = index % SHAPES_PER_ROW;
+            const x = col * (DRAWING_DISPLAY_SIZE + GAP);
+            const y = row * (DRAWING_DISPLAY_SIZE + GAP);
             
             // Prefer SVG string if available (new format)
             if (submission.svgString) {
-              // Scale down the SVG to fit the display size
-              // The original SVG is canvasSize x canvasSize (300vh = ~2400px)
-              // We want to display it at DRAWING_DISPLAY_SIZE (600px)
-              const canvasSize = typeof window !== 'undefined' ? window.innerHeight * 3 : 2400;
-              const scale = DRAWING_DISPLAY_SIZE / canvasSize;
+              // SVG is saved at 500x500, scale up to display size (600px)
+              const svgSize = 500;
+              const scale = DRAWING_DISPLAY_SIZE / svgSize;
               
               return (
                 <div
@@ -215,19 +315,31 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
                   style={{
                     position: 'absolute',
                     left: `${x}px`,
-                    top: '0px',
+                    top: `${y}px`,
                     width: `${DRAWING_DISPLAY_SIZE}px`,
                     height: `${DRAWING_DISPLAY_SIZE}px`,
                     overflow: 'hidden',
-                    backgroundColor: 'transparent',
                   }}
                 >
+                  {/* Rectangle background */}
                   <div
                     style={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      backgroundColor: '#F8F8F8',
+                      zIndex: 0,
+                    }}
+                  />
+                  {/* SVG content - scaled up */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      zIndex: 1,
                       transform: `scale(${scale})`,
                       transformOrigin: 'top left',
-                      width: `${canvasSize}px`,
-                      height: `${canvasSize}px`,
+                      width: `${svgSize}px`,
+                      height: `${svgSize}px`,
                     }}
                     dangerouslySetInnerHTML={{ __html: submission.svgString }}
                   />
@@ -235,7 +347,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
               );
             }
             
-            // Fallback to imageData for old submissions - remove white background
+            // Fallback to imageData for old submissions
             if (submission.imageData) {
               return (
                 <div
@@ -243,19 +355,31 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
                   style={{
                     position: 'absolute',
                     left: `${x}px`,
-                    top: '0px',
+                    top: `${y}px`,
                     width: `${DRAWING_DISPLAY_SIZE}px`,
                     height: `${DRAWING_DISPLAY_SIZE}px`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: 'transparent',
                   }}
                 >
+                  {/* Rectangle background */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      backgroundColor: '#F8F8F8',
+                      zIndex: 0,
+                    }}
+                  />
+                  {/* Image content */}
                   <img
                     src={submission.imageData}
                     alt={`Drawing ${index + 1}`}
                     style={{
+                      position: 'relative',
+                      zIndex: 1,
                       maxWidth: '100%',
                       maxHeight: '100%',
                       width: 'auto',

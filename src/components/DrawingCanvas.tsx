@@ -961,41 +961,43 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       return;
     }
 
-    // Get canvas size (300vh = viewportHeight * 3)
-    const canvasSize = window.innerHeight * 3;
+    // Save SVG at smaller size (500x500) for gallery preview
+    const svgSize = 500;
     
     // Create SVG that combines default shape and drawing
-    // Convert both canvases to data URLs with transparent backgrounds
+    // Scale down the canvases to save smaller SVG for gallery preview
     const createCombinedSVG = async (): Promise<string> => {
-      // Create temporary canvases with transparent backgrounds
+      // Create scaled-down temporary canvases
       const tempShapeCanvas = document.createElement('canvas');
-      tempShapeCanvas.width = shapeCanvas.width;
-      tempShapeCanvas.height = shapeCanvas.height;
+      tempShapeCanvas.width = svgSize;
+      tempShapeCanvas.height = svgSize;
       const tempShapeCtx = tempShapeCanvas.getContext('2d');
       if (tempShapeCtx) {
-        tempShapeCtx.drawImage(shapeCanvas, 0, 0);
+        // Scale down the shape canvas to fit in 500x500
+        tempShapeCtx.drawImage(shapeCanvas, 0, 0, shapeCanvas.width, shapeCanvas.height, 0, 0, svgSize, svgSize);
       }
       
       const tempDrawingCanvas = document.createElement('canvas');
-      tempDrawingCanvas.width = canvas.width;
-      tempDrawingCanvas.height = canvas.height;
+      tempDrawingCanvas.width = svgSize;
+      tempDrawingCanvas.height = svgSize;
       const tempDrawingCtx = tempDrawingCanvas.getContext('2d');
       if (tempDrawingCtx) {
-        tempDrawingCtx.drawImage(canvas, 0, 0);
+        // Scale down the drawing canvas to fit in 500x500
+        tempDrawingCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, svgSize, svgSize);
       }
       
       // Get canvas data URLs (PNG supports transparency)
       const shapeDataUrl = tempShapeCanvas.toDataURL('image/png');
       const drawingDataUrl = tempDrawingCanvas.toDataURL('image/png');
       
-      // Build SVG with transparent background
-      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasSize}" height="${canvasSize}" viewBox="0 0 ${canvasSize} ${canvasSize}">`;
+      // Build SVG with transparent background at smaller size
+      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}">`;
       
       // Add shape canvas as background layer
-      svgContent += `<image href="${shapeDataUrl}" x="0" y="0" width="${canvasSize}" height="${canvasSize}" />`;
+      svgContent += `<image href="${shapeDataUrl}" x="0" y="0" width="${svgSize}" height="${svgSize}" />`;
       
       // Add drawing canvas as top layer
-      svgContent += `<image href="${drawingDataUrl}" x="0" y="0" width="${canvasSize}" height="${canvasSize}" />`;
+      svgContent += `<image href="${drawingDataUrl}" x="0" y="0" width="${svgSize}" height="${svgSize}" />`;
       
       svgContent += '</svg>';
       return svgContent;
@@ -1015,40 +1017,92 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             const { supabase } = await import('@/lib/supabase');
             const today = new Date().toISOString().split('T')[0];
             
-            // Get today's daily_shape_id
-            const { data: dailyShape, error: shapeError } = await supabase
+            console.log('Attempting to save drawing to Supabase for date:', today);
+            
+            // Get today's daily_shape_id, or fall back to most recent daily shape
+            let dailyShape;
+            let shapeError;
+            
+            // First try to get today's shape
+            const todayResult = await supabase
               .from('daily_shapes')
               .select('id')
               .eq('date', today)
-              .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
+              .maybeSingle();
+            
+            dailyShape = todayResult.data;
+            shapeError = todayResult.error;
+            
+            // If no shape for today, get the most recent one
+            if (!dailyShape && !shapeError) {
+              console.log('No daily shape found for today, fetching most recent daily shape');
+              const recentResult = await supabase
+                .from('daily_shapes')
+                .select('id')
+                .order('date', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              dailyShape = recentResult.data;
+              shapeError = recentResult.error;
+              
+              if (dailyShape) {
+                console.log('Using most recent daily shape:', dailyShape.id);
+              }
+            }
             
             if (shapeError) {
               console.error('Error fetching daily shape:', shapeError);
+              console.error('Shape error details:', JSON.stringify(shapeError, null, 2));
               throw new Error(`Failed to fetch daily shape: ${shapeError.message}`);
             }
             
-            if (!dailyShape) {
-              throw new Error('No daily shape found for today. Please create a shape first.');
-            }
+            console.log('Daily shape lookup result:', dailyShape);
             
             // Save drawing to user_drawings table
-            const { error: drawingError } = await supabase
-              .from('user_drawings')
-              .insert({
+            if (dailyShape) {
+              console.log('Saving drawing with daily_shape_id:', dailyShape.id);
+              
+              const insertData = {
                 daily_shape_id: dailyShape.id,
                 drawing_paths: {
                   svgString,
                   imageData: svgDataUrl,
                   drawingPaths: drawingPathsRef.current,
                 },
+              };
+              
+              console.log('Insert data:', { 
+                daily_shape_id: insertData.daily_shape_id,
+                hasSvgString: !!insertData.drawing_paths.svgString,
+                hasImageData: !!insertData.drawing_paths.imageData,
+                hasDrawingPaths: !!insertData.drawing_paths.drawingPaths,
               });
-            
-            if (drawingError) throw drawingError;
-            
-            console.log('Drawing saved successfully to Supabase!');
-          } catch (error) {
+              
+              const { data: insertedData, error: drawingError } = await supabase
+                .from('user_drawings')
+                .insert(insertData)
+                .select();
+              
+              if (drawingError) {
+                console.error('Error saving drawing to Supabase:', drawingError);
+                console.error('Error details:', JSON.stringify(drawingError, null, 2));
+                console.error('Error code:', drawingError.code);
+                console.error('Error message:', drawingError.message);
+                throw drawingError;
+              }
+              
+              console.log('Drawing saved successfully to Supabase!', insertedData);
+            } else {
+              console.warn('No daily shape found for today:', today);
+              console.warn('Drawing will not be saved to database.');
+              console.warn('Please create a daily shape first.');
+            }
+          } catch (error: any) {
             console.error('Failed to save drawing to Supabase:', error);
             console.error('Error details:', JSON.stringify(error, null, 2));
+            console.error('Error type:', typeof error);
+            console.error('Error constructor:', error?.constructor?.name);
             // Continue with local submission even if Supabase fails
           }
           
