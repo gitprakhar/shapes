@@ -60,8 +60,6 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
           .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
         
         if (shapeError) {
-          console.error('Error fetching daily shape:', shapeError);
-          console.error('Shape error details:', JSON.stringify(shapeError, null, 2));
           setAllSubmissions([]);
           return;
         }
@@ -71,9 +69,6 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
         let drawingsError;
         
         if (dailyShape) {
-          console.log('Daily shape ID:', dailyShape.id);
-          console.log('Daily shape ID type:', typeof dailyShape.id);
-          
           // Load all drawings for today's shape
           const result = await supabase
             .from('user_drawings')
@@ -84,8 +79,6 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
           drawings = result.data;
           drawingsError = result.error;
         } else {
-          console.warn('No daily shape found for today, loading all recent drawings');
-          
           // Load all recent drawings if no daily shape exists
           const result = await supabase
             .from('user_drawings')
@@ -98,14 +91,9 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
         }
         
         if (drawingsError) {
-          console.error('Error loading drawings:', drawingsError);
-          console.error('Drawings error details:', JSON.stringify(drawingsError, null, 2));
           setAllSubmissions([]);
           return;
         }
-        
-        console.log('Loaded drawings from Supabase:', drawings);
-        console.log('Number of drawings found:', drawings?.length || 0);
         
         // Convert Supabase format to Submission format
         const submissions: Submission[] = (drawings || []).map((drawing: any) => {
@@ -125,15 +113,11 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
             y: 0,
           };
           
-          console.log('Processed submission:', { id: submission.id, hasSvgString: !!submission.svgString, hasImageData: !!submission.imageData });
-          
           return submission;
         });
         
-        console.log('Final submissions array:', submissions);
         setAllSubmissions(submissions);
       } catch (error) {
-        console.error('Failed to load submissions from Supabase:', error);
         setAllSubmissions([]);
       }
     };

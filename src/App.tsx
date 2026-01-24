@@ -66,7 +66,7 @@ function AppContent() {
     try {
       localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(submissions));
     } catch (error) {
-      console.error('Failed to save submissions to localStorage:', error);
+      // Failed to save to localStorage
     }
   }, [submissions]);
 

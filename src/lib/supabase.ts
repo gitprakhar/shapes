@@ -4,14 +4,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabasePublishableKey) {
-  const error = 'Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY';
-  console.error(error);
-  throw new Error(error);
-}
-
-// Validate URL format
-if (!supabaseUrl.startsWith('http://') && !supabaseUrl.startsWith('https://')) {
-  console.warn('Supabase URL should start with http:// or https://');
+  throw new Error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY');
 }
 
 // Create Supabase client with minimal configuration

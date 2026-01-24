@@ -71,14 +71,10 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       if (!error && data) {
         defaultShapeData = data.shape_data;
       } else {
-        if (error) {
-          console.error('Error loading shape from Supabase:', error);
-        }
         // Fallback to localStorage
         defaultShapeData = localStorage.getItem('defaultShape');
       }
     } catch (error) {
-      console.error('Failed to load shape from Supabase, using localStorage:', error);
       defaultShapeData = localStorage.getItem('defaultShape');
     }
     
@@ -102,7 +98,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
         );
       };
       img.onerror = () => {
-        console.error('Failed to load default shape image');
+        // Failed to load image
       };
       img.src = defaultShapeData;
     }
@@ -219,8 +215,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       }
       
       // Redraw shape after resize
-      drawShape(shapeCtx, canvasSize, canvasSize).catch((error) => {
-        console.error('Failed to draw shape:', error);
+      drawShape(shapeCtx, canvasSize, canvasSize).catch(() => {
+        // Failed to draw shape
       });
     };
 
@@ -233,7 +229,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       strokeImageRef.current = strokeImg;
     };
     strokeImg.onerror = () => {
-      console.error('Failed to load stroke SVG');
+      // Failed to load stroke SVG
     };
     strokeImg.src = '/stroke/stroke-vector.svg';
 
@@ -967,8 +963,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             const { supabase } = await import('@/lib/supabase');
             const today = new Date().toISOString().split('T')[0];
             
-            console.log('Attempting to save drawing to Supabase for date:', today);
-            
             // Get today's daily_shape_id, or fall back to most recent daily shape
             let dailyShape;
             let shapeError;
@@ -985,7 +979,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             
             // If no shape for today, get the most recent one
             if (!dailyShape && !shapeError) {
-              console.log('No daily shape found for today, fetching most recent daily shape');
               const recentResult = await supabase
                 .from('daily_shapes')
                 .select('id')
@@ -995,24 +988,14 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
               
               dailyShape = recentResult.data;
               shapeError = recentResult.error;
-              
-              if (dailyShape) {
-                console.log('Using most recent daily shape:', dailyShape.id);
-              }
             }
             
             if (shapeError) {
-              console.error('Error fetching daily shape:', shapeError);
-              console.error('Shape error details:', JSON.stringify(shapeError, null, 2));
               throw new Error(`Failed to fetch daily shape: ${shapeError.message}`);
             }
             
-            console.log('Daily shape lookup result:', dailyShape);
-            
             // Save drawing to user_drawings table
             if (dailyShape) {
-              console.log('Saving drawing with daily_shape_id:', dailyShape.id);
-              
               const insertData = {
                 daily_shape_id: dailyShape.id,
                 drawing_paths: {
@@ -1022,37 +1005,16 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
                 },
               };
               
-              console.log('Insert data:', { 
-                daily_shape_id: insertData.daily_shape_id,
-                hasSvgString: !!insertData.drawing_paths.svgString,
-                hasImageData: !!insertData.drawing_paths.imageData,
-                hasDrawingPaths: !!insertData.drawing_paths.drawingPaths,
-              });
-              
-              const { data: insertedData, error: drawingError } = await supabase
+              const { error: drawingError } = await supabase
                 .from('user_drawings')
                 .insert(insertData)
                 .select();
               
               if (drawingError) {
-                console.error('Error saving drawing to Supabase:', drawingError);
-                console.error('Error details:', JSON.stringify(drawingError, null, 2));
-                console.error('Error code:', drawingError.code);
-                console.error('Error message:', drawingError.message);
                 throw drawingError;
               }
-              
-              console.log('Drawing saved successfully to Supabase!', insertedData);
-            } else {
-              console.warn('No daily shape found for today:', today);
-              console.warn('Drawing will not be saved to database.');
-              console.warn('Please create a daily shape first.');
             }
           } catch (error: any) {
-            console.error('Failed to save drawing to Supabase:', error);
-            console.error('Error details:', JSON.stringify(error, null, 2));
-            console.error('Error type:', typeof error);
-            console.error('Error constructor:', error?.constructor?.name);
             // Continue with local submission even if Supabase fails
           }
           
@@ -1064,8 +1026,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
         };
         reader.readAsDataURL(svgBlob);
       })
-      .catch((error) => {
-        console.error('Failed to create SVG:', error);
+      .catch(() => {
         setIsSubmitting(false);
       });
   };

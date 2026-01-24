@@ -293,7 +293,6 @@ export function ShapeCreator({ onSave, onBack }: ShapeCreatorProps) {
         .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
       
       if (checkError) {
-        console.error('Error checking for existing shape:', checkError);
         throw checkError;
       }
       
@@ -305,7 +304,6 @@ export function ShapeCreator({ onSave, onBack }: ShapeCreatorProps) {
           .eq('id', existingShape.id);
         
         if (error) {
-          console.error('Error updating shape:', error);
           throw error;
         }
       } else {
@@ -318,7 +316,6 @@ export function ShapeCreator({ onSave, onBack }: ShapeCreatorProps) {
           });
         
         if (error) {
-          console.error('Error inserting shape:', error);
           throw error;
         }
       }
@@ -326,14 +323,9 @@ export function ShapeCreator({ onSave, onBack }: ShapeCreatorProps) {
       // Also save to localStorage for backward compatibility
       localStorage.setItem('defaultShape', imageData);
       
-      console.log('Shape saved successfully to Supabase!');
-      
       // Call the onSave callback
       onSave();
     } catch (error) {
-      console.error('Failed to save shape to Supabase:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
-      
       // Still save to localStorage as fallback
       localStorage.setItem('defaultShape', imageData);
       
