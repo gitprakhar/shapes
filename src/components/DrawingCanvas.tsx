@@ -24,8 +24,9 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const [isPanning, setIsPanning] = useState(false);
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
   const [initialOffset, setInitialOffset] = useState({ x: 0, y: 0 }); // Initial centered offset for calculating pan limits
-  const [zoom, setZoom] = useState(1); // Zoom level (1 = 100%)
-  const zoomRef = useRef(1); // Ref to track current zoom for gesture handlers
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const [zoom, setZoom] = useState(isMobile ? 0.8 : 1); // Zoom level (mobile starts at 80%)
+  const zoomRef = useRef(isMobile ? 0.8 : 1); // Ref to track current zoom for gesture handlers
   const offsetRef = useRef({ x: 0, y: 0 }); // Ref to track current canvasOffset for gesture handlers
   const lastTouchDistanceRef = useRef<number | null>(null); // For two-finger panning/zooming
   const lastTouchCenterRef = useRef<Point | null>(null); // For two-finger panning
@@ -47,7 +48,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const STROKE_OPACITY = 0.8;
   
   // Zoom settings
-  const MIN_ZOOM = 0.1; // 10%
+  const MIN_ZOOM = 0.3; // 30%
   const MAX_ZOOM = 4; // 400%
 
   // Draw the default shape (loaded from Supabase or localStorage fallback)
@@ -126,14 +127,16 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     const viewportHeight = window.innerHeight;
     const viewportCenterX = viewportWidth / 2;
     const viewportCenterY = viewportHeight / 2;
-    
-    // Canvas center position in viewport before offset
-    const canvasCenterX = canvasSize / 6;
-    const canvasCenterY = canvasSize / 6;
-    
-    // Calculate offset to center the canvas (and shape) in the viewport
-    const offsetX = viewportCenterX - canvasCenterX;
-    const offsetY = viewportCenterY - canvasCenterY;
+    const currentZoom = isMobile ? 0.8 : 1;
+
+    // CSS transform: scale(zoom) translate(offset, offset), origin 0 0
+    // Screen position of canvas center (canvasSize/2):
+    //   screenX = containerLeft + (canvasSize/2 + offset.x) * zoom
+    //   containerLeft = -canvasSize/3
+    // To center: viewportCenterX = -canvasSize/3 + (canvasSize/2 + offset.x) * zoom
+    // Solve for offset.x: offset.x = (viewportCenterX + canvasSize/3) / zoom - canvasSize/2
+    const offsetX = (viewportCenterX + canvasSize / 3) / currentZoom - canvasSize / 2;
+    const offsetY = (viewportCenterY + canvasSize / 3) / currentZoom - canvasSize / 2;
     
     // Store the initial centered offset for panning limits
     setInitialOffset({ x: offsetX, y: offsetY });
@@ -763,17 +766,10 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       });
     } else {
       // Pan the canvas (no modifier key)
-      // Limit panning to keep canvas within bounds (100vh on each side, relative to initial offset)
-      const viewportHeight = window.innerHeight;
-      const panLimit = viewportHeight * 1; // 100vh
-      const maxOffsetX = initialOffset.x + panLimit;
-      const minOffsetX = initialOffset.x - panLimit;
-      const maxOffsetY = initialOffset.y + panLimit;
-      const minOffsetY = initialOffset.y - panLimit;
-      
+      // Offset is in scaled space (CSS: scale then translate), so divide delta by zoom
       setCanvasOffset(prev => ({
-        x: Math.max(minOffsetX, Math.min(maxOffsetX, prev.x - e.deltaX)),
-        y: Math.max(minOffsetY, Math.min(maxOffsetY, prev.y - e.deltaY)),
+        x: prev.x - e.deltaX / zoom,
+        y: prev.y - e.deltaY / zoom,
       }));
     }
   };
@@ -929,9 +925,10 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     // Reset move count
     setMoveCount(0);
     
-    // Reset zoom to 1 (100%)
-    setZoom(1);
-    zoomRef.current = 1;
+    // Reset zoom to default
+    const defaultZoom = isMobile ? 0.8 : 1;
+    setZoom(defaultZoom);
+    zoomRef.current = defaultZoom;
     
     // Reset pan position to initial centered position
     setCanvasOffset(initialOffset);
