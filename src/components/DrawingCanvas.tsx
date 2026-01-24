@@ -30,6 +30,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const lastTouchDistanceRef = useRef<number | null>(null); // For two-finger panning/zooming
   const lastTouchCenterRef = useRef<Point | null>(null); // For two-finger panning
   const lastGestureScaleRef = useRef<number>(1); // For trackpad gesture zoom
+  const pendingTouchRef = useRef<{ pos: Point, ctx: CanvasRenderingContext2D } | null>(null); // Delay draw until confirmed single-finger
   const lastPointRef = useRef<Point | null>(null);
   const lastTimeRef = useRef<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -516,7 +517,10 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       e.stopPropagation();
       e.nativeEvent.preventDefault();
       e.nativeEvent.stopImmediatePropagation();
-      
+
+      // Cancel any pending touch (second finger arrived before draw committed)
+      pendingTouchRef.current = null;
+
       // Stop any active drawing immediately
       if (isDrawing) {
         setIsDrawing(false);
@@ -532,43 +536,32 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       lastTouchDistanceRef.current = distance;
       lastTouchCenterRef.current = center;
     } else if (e.touches.length === 1 && !isPanning) {
-      // Single touch = drawing
-      // Check if user has reached the move limit
+      // Single touch - defer drawing until we confirm it's not a pinch gesture
       if (moveCount >= 5) return;
-      
+
       const canvas = canvasRef.current;
       if (!canvas) return;
-      
+
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      
+
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
-      // Account for zoom in touch coordinates
       const pos = {
         x: (touch.clientX - rect.left) / zoom,
         y: (touch.clientY - rect.top) / zoom,
       };
-      
+
       const dpr = window.devicePixelRatio || 1;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = STROKE_OPACITY;
-      
-      setIsDrawing(true);
+
+      // Store pending touch - don't draw yet until confirmed single-finger
+      pendingTouchRef.current = { pos, ctx };
       lastPointRef.current = pos;
       lastTimeRef.current = Date.now();
-      
-      // Increment move count (one touch = one move)
-      setMoveCount(prev => prev + 1);
-      
-      drawingPathsRef.current.push({
-        points: [pos],
-        strokeWidth: BASE_STROKE_WIDTH,
-      });
-      
-      drawSvgStamp(ctx, pos.x, pos.y, BASE_STROKE_WIDTH);
     }
   };
 
@@ -577,6 +570,9 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     
     // If two fingers are on screen, stop drawing immediately and only handle panning/zooming
     if (e.touches.length === 2) {
+      // Cancel any pending touch (finger landed just before the second one)
+      pendingTouchRef.current = null;
+
       // Stop any active drawing
       if (isDrawing) {
         setIsDrawing(false);
@@ -629,8 +625,22 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
 
       setZoom(newZoom);
       setCanvasOffset({ x: newOffsetX, y: newOffsetY });
-    } else if (e.touches.length === 1 && isDrawing && !isPanning) {
-      // Single touch = drawing (only if not panning)
+    } else if (e.touches.length === 1 && !isPanning) {
+      // Single touch - commit pending touch if exists, then continue drawing
+      if (pendingTouchRef.current) {
+        const { pos, ctx } = pendingTouchRef.current;
+        setIsDrawing(true);
+        setMoveCount(prev => prev + 1);
+        drawingPathsRef.current.push({
+          points: [pos],
+          strokeWidth: BASE_STROKE_WIDTH,
+        });
+        drawSvgStamp(ctx, pos.x, pos.y, BASE_STROKE_WIDTH);
+        pendingTouchRef.current = null;
+      }
+
+      if (!isDrawing && drawingPathsRef.current.length === 0) return;
+
       const canvas = canvasRef.current;
       if (!canvas) return;
       
@@ -683,6 +693,19 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   };
 
   const handleTouchEnd = () => {
+    // If there's a pending touch that was never committed (tap without move),
+    // commit it now as a single dot
+    if (pendingTouchRef.current) {
+      const { pos, ctx } = pendingTouchRef.current;
+      setMoveCount(prev => prev + 1);
+      drawingPathsRef.current.push({
+        points: [pos],
+        strokeWidth: BASE_STROKE_WIDTH,
+      });
+      drawSvgStamp(ctx, pos.x, pos.y, BASE_STROKE_WIDTH);
+      pendingTouchRef.current = null;
+    }
+
     setIsPanning(false);
     setIsDrawing(false);
     lastTouchDistanceRef.current = null;

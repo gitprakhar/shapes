@@ -66,8 +66,8 @@ export function Homepage() {
             }}
           />
 
-          {/* Shape image - mobile: at top, desktop: centered */}
-          <div className="absolute inset-0 flex items-start md:items-center justify-center z-0 pointer-events-none overflow-visible pt-8 md:pt-0">
+          {/* Shape image - centered on both mobile and desktop */}
+          <div className="absolute inset-0 flex items-center md:items-center justify-center z-0 pointer-events-none overflow-visible">
             <img
               src={isMobile ? `/mobile/shape${currentShapeIndex + 1}.png` : `/shapes/shape${currentShapeIndex + 1}.png`}
               alt="Shape"
@@ -75,7 +75,6 @@ export function Homepage() {
               style={{
                 width: isMobile ? '100vw' : '90vw',
                 height: isMobile ? 'auto' : '90vh',
-                transform: isMobile ? 'translateY(-38%)' : 'translateY(0%)',
               }}
             />
           </div>
