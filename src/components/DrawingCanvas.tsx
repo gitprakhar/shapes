@@ -1075,6 +1075,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       className="fixed inset-0 overflow-hidden" 
       style={{ 
         backgroundColor: '#F1F1F1',
+        height: '100dvh',
+        minHeight: '-webkit-fill-available',
         overscrollBehavior: 'none',
         overscrollBehaviorX: 'none',
         overscrollBehaviorY: 'none',
@@ -1083,9 +1085,11 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     >
       {/* Drawing section */}
       <div 
-        className="absolute w-screen h-screen overflow-hidden"
+        className="absolute w-screen overflow-hidden"
         style={{ 
           backgroundColor: '#F1F1F1',
+          height: '100dvh',
+          minHeight: '-webkit-fill-available',
           left: 0,
           top: 0,
           overscrollBehavior: 'none',
@@ -1101,7 +1105,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
             backgroundSize: '24px 24px',
             width: '100vw',
-            height: '100vh',
+            height: '100dvh',
             left: 0,
             top: 0,
             zIndex: 0,
