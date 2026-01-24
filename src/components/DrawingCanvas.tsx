@@ -253,15 +253,16 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       const containerTop = canvasSize > 0 ? -canvasSize / 3 : -window.innerHeight;
 
       if (e.ctrlKey || e.metaKey) {
-        // Zoom towards cursor
+        // Zoom towards cursor using multiplicative factor for smooth behavior
         const currentZoom = zoomRef.current;
         const currentOffset = offsetRef.current;
         const mouseX = e.clientX;
         const mouseY = e.clientY;
 
-        const zoomSensitivity = 0.005;
-        const zoomDelta = -e.deltaY * zoomSensitivity;
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + zoomDelta));
+        // Clamp deltaY to prevent large jumps on Chrome
+        const clampedDelta = Math.max(-50, Math.min(50, e.deltaY));
+        const zoomFactor = Math.exp(-clampedDelta * 0.01);
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * zoomFactor));
 
         const canvasX = (mouseX - containerLeft) / currentZoom - currentOffset.x;
         const canvasY = (mouseY - containerTop) / currentZoom - currentOffset.y;

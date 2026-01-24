@@ -32,6 +32,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const lastTouchDistanceRef = useRef<number | null>(null);
   const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
   const lastGestureScaleRef = useRef<number>(1);
+  const isGestureActiveRef = useRef(false); // Track if Safari gesture is active to avoid double-handling
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
@@ -265,19 +266,26 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   // Prevent browser zoom and handle wheel/gesture events at document level
   // This ensures Safari can't intercept events on child elements (images)
   useEffect(() => {
+    // Detect Safari (supports GestureEvent) to avoid double-handling pinch zoom
+    const isSafari = 'GestureEvent' in window;
+
     const handleWheelEvent = (e: WheelEvent) => {
       e.preventDefault();
 
-      if (e.ctrlKey || e.metaKey) {
-        // Zoom towards cursor
+      // Skip wheel zoom entirely on Safari — gesture handler handles it
+      if (isGestureActiveRef.current) return;
+
+      if ((e.ctrlKey || e.metaKey) && !isSafari) {
+        // Zoom towards cursor using multiplicative factor for smooth behavior
         const currentZoom = zoomRef.current;
         const currentOffset = offsetRef.current;
         const mouseX = e.clientX;
         const mouseY = e.clientY;
 
-        const zoomSensitivity = 0.005;
-        const zoomDelta = -e.deltaY * zoomSensitivity;
-        const newZoom = Math.max(0.1, Math.min(2, currentZoom + zoomDelta));
+        // Clamp deltaY to prevent large jumps on Chrome
+        const clampedDelta = Math.max(-50, Math.min(50, e.deltaY));
+        const zoomFactor = Math.exp(-clampedDelta * 0.01);
+        const newZoom = Math.max(0.1, Math.min(2, currentZoom * zoomFactor));
 
         const canvasX = (mouseX - currentOffset.x) / currentZoom;
         const canvasY = (mouseY - currentOffset.y) / currentZoom;
@@ -311,6 +319,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     const handleGestureStart = (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
+      isGestureActiveRef.current = true;
       const gestureEvent = e as any;
       if (gestureEvent.scale !== undefined) {
         lastGestureScaleRef.current = gestureEvent.scale;
@@ -350,6 +359,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     const handleGestureEnd = (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
+      isGestureActiveRef.current = false;
       lastGestureScaleRef.current = 1;
     };
 
@@ -512,6 +522,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
             top: 0,
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
             transformOrigin: 'top left',
+            pointerEvents: 'none',
           }}
         >
           {allSubmissions.map((submission, index) => {
