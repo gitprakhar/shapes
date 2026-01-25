@@ -71,8 +71,20 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       if (!error && data) {
         defaultShapeData = data.shape_data;
       } else {
-        // Fallback to localStorage
-        defaultShapeData = localStorage.getItem('defaultShape');
+        // If no shape for today, get the most recent one
+        const { data: recentData, error: recentError } = await supabase
+          .from('daily_shapes')
+          .select('shape_data')
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (!recentError && recentData) {
+          defaultShapeData = recentData.shape_data;
+        } else {
+          // Fallback to localStorage
+          defaultShapeData = localStorage.getItem('defaultShape');
+        }
       }
     } catch (error) {
       defaultShapeData = localStorage.getItem('defaultShape');
