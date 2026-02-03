@@ -36,6 +36,7 @@ export function Gallery({}: GalleryProps) {
   const lastGestureScaleRef = useRef<number>(1);
   const isGestureActiveRef = useRef(false); // Track if Safari gesture is active to avoid double-handling
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   // Load all submissions from Supabase on mount and when submissions change
@@ -125,8 +126,10 @@ export function Gallery({}: GalleryProps) {
         });
         
         setAllSubmissions(submissions);
+        setIsLoading(false);
       } catch (error) {
         setAllSubmissions([]);
+        setIsLoading(false);
       }
     };
     
@@ -503,14 +506,14 @@ export function Gallery({}: GalleryProps) {
       />
       
       {/* Render all drawings as SVGs */}
-      {allSubmissions.length === 0 ? (
+      {!isLoading && allSubmissions.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center" style={{ color: '#232323' }}>
             <div className="font-sans text-[24px] 2xl:text-[36px] mb-2">No drawings yet</div>
             <div className="font-sans text-[14px] 2xl:text-[21px]">Submit a drawing to see it here</div>
           </div>
         </div>
-      ) : (
+      ) : !isLoading ? (
         <div
           className="absolute"
           style={{
@@ -621,7 +624,7 @@ export function Gallery({}: GalleryProps) {
             return null;
           })}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
