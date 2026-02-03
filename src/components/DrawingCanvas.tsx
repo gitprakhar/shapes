@@ -931,7 +931,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       tempShapeCanvas.height = svgSize;
       const tempShapeCtx = tempShapeCanvas.getContext('2d');
       if (tempShapeCtx) {
-        // Scale down the shape canvas to fit in 500x500
+        // Scale down the full shape canvas to 500x500
         tempShapeCtx.drawImage(shapeCanvas, 0, 0, shapeCanvas.width, shapeCanvas.height, 0, 0, svgSize, svgSize);
       }
       
@@ -940,13 +940,59 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
       tempDrawingCanvas.height = svgSize;
       const tempDrawingCtx = tempDrawingCanvas.getContext('2d');
       if (tempDrawingCtx) {
-        // Scale down the drawing canvas to fit in 500x500
+        // Scale down the full drawing canvas to 500x500
         tempDrawingCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, svgSize, svgSize);
+      }
+
+      const getContentBounds = (ctx: CanvasRenderingContext2D, size: number) => {
+        const imageData = ctx.getImageData(0, 0, size, size).data;
+        let minX = size, minY = size, maxX = -1, maxY = -1;
+
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            const i = (y * size + x) * 4 + 3; // alpha channel
+            if (imageData[i] > 0) {
+              if (x < minX) minX = x;
+              if (y < minY) minY = y;
+              if (x > maxX) maxX = x;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+
+        if (maxX < minX || maxY < minY) {
+          return null;
+        }
+
+        return { minX, minY, maxX, maxY };
+      };
+
+      const bounds = tempDrawingCtx ? getContentBounds(tempDrawingCtx, svgSize) : null;
+      const dx = bounds ? Math.round((svgSize - (bounds.maxX - bounds.minX + 1)) / 2 - bounds.minX) : 0;
+      const dy = bounds ? Math.round((svgSize - (bounds.maxY - bounds.minY + 1)) / 2 - bounds.minY) : 0;
+
+      // Apply centering offset to both layers so the drawing content is centered
+      const centeredShapeCanvas = document.createElement('canvas');
+      centeredShapeCanvas.width = svgSize;
+      centeredShapeCanvas.height = svgSize;
+      const centeredShapeCtx = centeredShapeCanvas.getContext('2d');
+      if (centeredShapeCtx) {
+        centeredShapeCtx.clearRect(0, 0, svgSize, svgSize);
+        centeredShapeCtx.drawImage(tempShapeCanvas, dx, dy);
+      }
+
+      const centeredDrawingCanvas = document.createElement('canvas');
+      centeredDrawingCanvas.width = svgSize;
+      centeredDrawingCanvas.height = svgSize;
+      const centeredDrawingCtx = centeredDrawingCanvas.getContext('2d');
+      if (centeredDrawingCtx) {
+        centeredDrawingCtx.clearRect(0, 0, svgSize, svgSize);
+        centeredDrawingCtx.drawImage(tempDrawingCanvas, dx, dy);
       }
       
       // Get canvas data URLs (PNG supports transparency)
-      const shapeDataUrl = tempShapeCanvas.toDataURL('image/png');
-      const drawingDataUrl = tempDrawingCanvas.toDataURL('image/png');
+      const shapeDataUrl = centeredShapeCanvas.toDataURL('image/png');
+      const drawingDataUrl = centeredDrawingCanvas.toDataURL('image/png');
       
       // Build SVG with transparent background at smaller size
       let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}">`;
