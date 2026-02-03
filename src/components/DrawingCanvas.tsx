@@ -1156,16 +1156,16 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
                 <button
                   onClick={handleReset}
                   disabled={moveCount === 0}
-                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
+                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ color: '#232323', textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
                 >
                   Reset Canvas
                 </button>
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting || moveCount === 0}
-                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-normal disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ color: '#232323', textUnderlineOffset: '0.3em' }}
+                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ color: '#232323', textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit'}
                 </button>

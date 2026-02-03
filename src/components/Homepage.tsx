@@ -86,8 +86,8 @@ export function Homepage() {
           >
             <span className="md:hidden">
               *from <span
-                className="underline cursor-pointer hover:opacity-70 transition-opacity"
-                style={{ textUnderlineOffset: '0.3em' }}
+                className="underline font-semibold cursor-pointer hover:opacity-70 transition-opacity"
+                style={{ textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
                 onClick={() => navigate('/draw')}
               >
                 today's shape
@@ -104,8 +104,8 @@ export function Homepage() {
           style={{ color: '#232323' }}
         >
           *from <span
-            className="underline cursor-pointer hover:opacity-70 transition-opacity"
-            style={{ textUnderlineOffset: '0.3em' }}
+            className="underline font-semibold cursor-pointer hover:opacity-70 transition-opacity"
+            style={{ textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
             onClick={() => navigate('/draw')}
           >
             today's shape
