@@ -22,7 +22,7 @@ interface GalleryProps {
   onNewDrawing: () => void;
 }
 
-export function Gallery({ submissions: propSubmissions }: GalleryProps) {
+export function Gallery({}: GalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
@@ -35,7 +35,7 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
   const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
   const lastGestureScaleRef = useRef<number>(1);
   const isGestureActiveRef = useRef(false); // Track if Safari gesture is active to avoid double-handling
-  const [allSubmissions, setAllSubmissions] = useState<Submission[]>(propSubmissions);
+  const [allSubmissions, setAllSubmissions] = useState<Submission[]>([]);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   // Load all submissions from Supabase on mount and when submissions change
@@ -165,13 +165,6 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
     
     return () => clearInterval(interval);
   }, []);
-
-  // Update when propSubmissions change (new submission added)
-  useEffect(() => {
-    if (propSubmissions.length > 0) {
-      setAllSubmissions(propSubmissions);
-    }
-  }, [propSubmissions]);
 
   // Calculate grid layout: responsive shapes per row
   const shapesPerRow = isMobile ? MOBILE_SHAPES_PER_ROW : DESKTOP_SHAPES_PER_ROW;
