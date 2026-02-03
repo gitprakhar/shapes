@@ -68,26 +68,34 @@ export function Gallery({ submissions: propSubmissions }: GalleryProps) {
         let drawings;
         let drawingsError;
         
-        if (dailyShape) {
-          // Load all drawings for today's shape
+        let shapeToUse = dailyShape;
+
+        // If no shape for today, get the most recent shape
+        if (!shapeToUse) {
+          const { data: recentShape } = await supabase
+            .from('daily_shapes')
+            .select('id')
+            .order('date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          shapeToUse = recentShape;
+        }
+
+        if (shapeToUse) {
+          // Load all drawings for the shape
           const result = await supabase
             .from('user_drawings')
             .select('id, daily_shape_id, drawing_paths, created_at')
-            .eq('daily_shape_id', dailyShape.id)
+            .eq('daily_shape_id', shapeToUse.id)
             .order('created_at', { ascending: true });
-          
+
           drawings = result.data;
           drawingsError = result.error;
         } else {
-          // Load all recent drawings if no daily shape exists
-          const result = await supabase
-            .from('user_drawings')
-            .select('id, daily_shape_id, drawing_paths, created_at')
-            .order('created_at', { ascending: false })
-            .limit(100); // Limit to most recent 100 drawings
-          
-          drawings = result.data;
-          drawingsError = result.error;
+          // No shapes exist at all
+          drawings = [];
+          drawingsError = null;
         }
         
         if (drawingsError) {
