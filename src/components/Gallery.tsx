@@ -4,6 +4,8 @@ const GAP = 40; // Gap between drawings
 const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing
 const DESKTOP_SHAPES_PER_ROW = 5; // Desktop shapes per row
 const MOBILE_SHAPES_PER_ROW = 3;  // Mobile shapes per row
+const MOBILE_INITIAL_ZOOM = 1;
+const MOBILE_BOTTOM_SPARE_ROWS = 0.25;
 
 interface Submission {
   id: string;
@@ -235,31 +237,69 @@ export function Gallery({}: GalleryProps) {
     setOffset(offsetRef.current);
   };
 
-  // Calculate initial zoom to fit all shapes in viewport
+  const clampOffset = (
+    off: { x: number; y: number },
+    z: number,
+    opts: { bottomPad?: number } = {}
+  ) => {
+    const scaledWidth = totalWidth * z;
+    const scaledHeight = totalHeight * z;
+    const maxX = 0;
+    const minX = window.innerWidth - scaledWidth;
+    const maxY = 0;
+    const minY = window.innerHeight - scaledHeight - (opts.bottomPad ?? 0);
+    const constrainedX = scaledWidth > window.innerWidth
+      ? Math.max(minX, Math.min(maxX, off.x))
+      : off.x;
+    const constrainedY = scaledHeight > window.innerHeight
+      ? Math.max(minY, Math.min(maxY, off.y))
+      : off.y;
+    return { x: constrainedX, y: constrainedY };
+  };
+
+  // Calculate initial zoom/offset
   useEffect(() => {
     if (allSubmissions.length > 0 && containerRef.current) {
       const containerWidth = window.innerWidth;
       const containerHeight = window.innerHeight;
-      
-      // Calculate zoom to fit all shapes with some padding
-      const padding = 80; // Padding on each side
+
+      if (isMobile) {
+        const padding = 24;
+        const availableWidth = containerWidth - padding * 2;
+        const availableHeight = containerHeight - padding * 2;
+        const fitWidthZoom = availableWidth / totalWidth;
+        const fitRowHeightZoom = availableHeight / DRAWING_DISPLAY_SIZE;
+        const initialZoom = Math.min(MOBILE_INITIAL_ZOOM, fitWidthZoom, fitRowHeightZoom, 1);
+        const extraSpace = (DRAWING_DISPLAY_SIZE + GAP) * MOBILE_BOTTOM_SPARE_ROWS;
+        const rawOffset = {
+          x: (containerWidth - totalWidth * initialZoom) / 2,
+          y: containerHeight - extraSpace - totalHeight * initialZoom,
+        };
+
+        const nextOffset = clampOffset(rawOffset, initialZoom, { bottomPad: extraSpace });
+        setZoom(initialZoom);
+        setOffset(nextOffset);
+        return;
+      }
+
+      // Desktop: fit all shapes with some padding
+      const padding = 80;
       const availableWidth = containerWidth - padding * 2;
       const availableHeight = containerHeight - padding * 2;
-      
+
       const zoomX = availableWidth / totalWidth;
       const zoomY = availableHeight / totalHeight;
-      const initialZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 1x
-      
-      setZoom(initialZoom);
-      
+      const initialZoom = Math.min(zoomX, zoomY, 1);
+
       // Center the canvas
       const scaledWidth = totalWidth * initialZoom;
       const scaledHeight = totalHeight * initialZoom;
       const centerX = (containerWidth - scaledWidth) / 2;
       const centerY = (containerHeight - scaledHeight) / 2;
+      setZoom(initialZoom);
       setOffset({ x: centerX, y: centerY });
     }
-  }, [allSubmissions.length, totalWidth, totalHeight]);
+  }, [allSubmissions.length, totalWidth, totalHeight, isMobile, shapesPerRow]);
   
   // Keep refs in sync with state
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
