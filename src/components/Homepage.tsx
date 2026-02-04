@@ -85,7 +85,7 @@ export function Homepage() {
             style={{ color: '#232323' }}
           >
             <span className="md:hidden">
-              *from <span className="font-semibold">today's shape</span> in 5 moves or less
+              *from today's shape in 5 moves or less
             </span>
           </div>
           
@@ -106,7 +106,7 @@ export function Homepage() {
           className="font-sans text-[16px] 2xl:text-[24px] text-center"
           style={{ color: '#232323' }}
         >
-          *from <span className="font-semibold">today's shape</span> in 5 moves or less
+          *from today's shape in 5 moves or less
         </div>
         <div className="mt-4 flex justify-center pointer-events-auto">
           <button
