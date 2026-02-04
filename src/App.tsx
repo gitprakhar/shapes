@@ -4,6 +4,7 @@ import { Homepage } from '@/components/Homepage';
 import { DrawingCanvas } from '@/components/DrawingCanvas';
 import { Gallery } from '@/components/Gallery';
 import { ShapeCreator } from '@/components/ShapeCreator';
+import { Analytics } from '@vercel/analytics/react';
 
 interface Point {
   x: number;
@@ -147,6 +148,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AppContent />
+      <Analytics />
     </BrowserRouter>
   );
 }
