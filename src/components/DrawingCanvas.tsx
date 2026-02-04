@@ -25,8 +25,8 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
   const [initialOffset, setInitialOffset] = useState({ x: 0, y: 0 }); // Initial centered offset for calculating pan limits
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  const [zoom, setZoom] = useState(isMobile ? 0.8 : 1); // Zoom level (mobile starts at 80%)
-  const zoomRef = useRef(isMobile ? 0.8 : 1); // Ref to track current zoom for gesture handlers
+  const [zoom, setZoom] = useState(isMobile ? 0.7 : 1); // Zoom level (mobile starts at 70%)
+  const zoomRef = useRef(isMobile ? 0.7 : 1); // Ref to track current zoom for gesture handlers
   const offsetRef = useRef({ x: 0, y: 0 }); // Ref to track current canvasOffset for gesture handlers
   const lastTouchDistanceRef = useRef<number | null>(null); // For two-finger panning/zooming
   const lastTouchCenterRef = useRef<Point | null>(null); // For two-finger panning
@@ -135,7 +135,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     const viewportHeight = window.innerHeight;
     const viewportCenterX = viewportWidth / 2;
     const viewportCenterY = viewportHeight / 2;
-    const currentZoom = isMobile ? 0.8 : 1;
+    const currentZoom = zoomRef.current;
 
     // CSS transform: scale(zoom) translate(offset, offset), origin 0 0
     // Screen position of canvas center (canvasSize/2):
@@ -890,7 +890,7 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     setMoveCount(0);
     
     // Reset zoom to default
-    const defaultZoom = isMobile ? 0.8 : 1;
+    const defaultZoom = isMobile ? 0.7 : 1;
     setZoom(defaultZoom);
     zoomRef.current = defaultZoom;
     
@@ -1140,44 +1140,42 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
             bottom: isMobile ? 'calc(5dvh + env(safe-area-inset-bottom))' : '4rem',
           }}
         >
-          <div className="flex items-end justify-between">
-            {/* Left: Text and buttons */}
-            <div className="flex flex-col">
-              <div className="font-sans font-normal pointer-events-none" style={{ color: '#232323' }}>
-                <div className="text-[28px] 2xl:text-[42px] mb-1">Draw and share</div>
-                <div className="text-[14px] 2xl:text-[21px]" style={{ lineHeight: '1.4' }}>
-                  There is a new shape every day.<br />
-                  Draw something in 5 moves or less.<br />
-                  Submit to see what others made.
-                </div>
+          <div className="flex flex-col">
+            {/* Top: Text */}
+            <div className="font-sans font-normal pointer-events-none" style={{ color: '#232323' }}>
+              <div className="text-[28px] 2xl:text-[42px] mb-1">Draw and share</div>
+              <div className="text-[14px] 2xl:text-[21px]" style={{ lineHeight: '1.4' }}>
+                There is a new shape every day.<br />
+                Draw something in 5 moves or less.<br />
+                Submit to see what others made.
               </div>
-              {/* Buttons under text */}
-              <div className="flex items-center gap-6 pt-4 mt-2 pointer-events-auto">
-                <button
-                  onClick={handleReset}
-                  disabled={moveCount === 0}
-                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ color: '#232323', textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
-                >
-                  Reset Canvas
-                </button>
+            </div>
+
+            {/* Bottom row: Buttons left, moves right (baseline-aligned) */}
+            <div className="flex items-baseline justify-between pt-6 mt-2 pointer-events-none">
+              <div className="flex items-baseline gap-6 pointer-events-auto">
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting || moveCount === 0}
-                  className="font-sans text-[16px] 2xl:text-[24px] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ color: '#232323', textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
+                  className="font-sans text-[13px] 2xl:text-[18px] leading-[1.1] font-semibold px-4 py-2 border-2 border-[#232323] bg-[#232323] text-white hover:bg-transparent hover:text-[#232323] transition-colors rounded-[8px] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit'}
                 </button>
+                <button
+                  onClick={handleReset}
+                  disabled={moveCount === 0}
+                  className="font-sans text-[13px] 2xl:text-[18px] leading-[1.1] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ color: '#232323', textUnderlineOffset: '0.25em' }}
+                >
+                  Reset Canvas
+                </button>
               </div>
-            </div>
-            
-            {/* Right: Move counter */}
-            <div 
-              className="font-sans text-[16px] 2xl:text-[24px] font-normal pointer-events-none"
-              style={{ color: '#232323' }}
-            >
-              {moveCount}/5 Moves
+              <div
+                className="font-sans text-[13px] 2xl:text-[18px] leading-[1.1] font-semibold pointer-events-none"
+                style={{ color: '#232323' }}
+              >
+                {moveCount}/5 Moves
+              </div>
             </div>
           </div>
         </div>

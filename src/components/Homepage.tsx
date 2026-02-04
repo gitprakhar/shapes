@@ -85,14 +85,17 @@ export function Homepage() {
             style={{ color: '#232323' }}
           >
             <span className="md:hidden">
-              *from <span
-                className="underline font-semibold cursor-pointer hover:opacity-70 transition-opacity"
-                style={{ textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
-                onClick={() => navigate('/draw')}
-              >
-                today's shape
-              </span> in 5 moves or less
+              *from <span className="font-semibold">today's shape</span> in 5 moves or less
             </span>
+          </div>
+          
+          <div className="mt-6 md:hidden pointer-events-auto">
+            <button
+              className="font-sans text-[13px] 2xl:text-[18px] font-semibold px-4 py-2 border-2 border-[#232323] bg-[#232323] text-white hover:bg-transparent hover:text-[#232323] transition-colors rounded-[8px]"
+              onClick={() => navigate('/draw')}
+            >
+              Start Drawing
+            </button>
           </div>
         </div>
       </div>
@@ -103,13 +106,15 @@ export function Homepage() {
           className="font-sans text-[16px] 2xl:text-[24px] text-center"
           style={{ color: '#232323' }}
         >
-          *from <span
-            className="underline font-semibold cursor-pointer hover:opacity-70 transition-opacity"
-            style={{ textUnderlineOffset: '0.3em', textDecorationThickness: '2px' }}
+          *from <span className="font-semibold">today's shape</span> in 5 moves or less
+        </div>
+        <div className="mt-4 flex justify-center pointer-events-auto">
+          <button
+            className="font-sans text-[13px] 2xl:text-[18px] font-semibold px-4 py-2 border-2 border-[#232323] bg-[#232323] text-white hover:bg-transparent hover:text-[#232323] transition-colors rounded-[8px]"
             onClick={() => navigate('/draw')}
           >
-            today's shape
-          </span> in 5 moves or less
+            Start Drawing
+          </button>
         </div>
       </div>
     </div>
