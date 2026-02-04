@@ -24,9 +24,10 @@ interface GalleryProps {
 
 export function Gallery({}: GalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const panStartRef = useRef({ x: 0, y: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
@@ -35,6 +36,9 @@ export function Gallery({}: GalleryProps) {
   const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
   const lastGestureScaleRef = useRef<number>(1);
   const isGestureActiveRef = useRef(false); // Track if Safari gesture is active to avoid double-handling
+  const rafIdRef = useRef<number | null>(null);
+  const pendingTransformRef = useRef<{ zoom: number; offset: { x: number; y: number } } | null>(null);
+  const wheelEndTimeoutRef = useRef<number | null>(null);
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
@@ -180,10 +184,7 @@ export function Gallery({}: GalleryProps) {
     if (e.button === 0) {
       setIsPanning(true);
       // Store the initial mouse position (absolute screen coordinates)
-      setPanStart({
-        x: e.clientX,
-        y: e.clientY,
-      });
+      panStartRef.current = { x: e.clientX, y: e.clientY };
       e.preventDefault();
       e.stopPropagation();
     }
@@ -192,16 +193,18 @@ export function Gallery({}: GalleryProps) {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning) {
       // Calculate the delta from where we started dragging
-      const deltaX = e.clientX - panStart.x;
-      const deltaY = e.clientY - panStart.y;
+      const deltaX = e.clientX - panStartRef.current.x;
+      const deltaY = e.clientY - panStartRef.current.y;
       
       // Apply the delta to the current offset
-      const newX = offset.x + deltaX;
-      const newY = offset.y + deltaY;
+      const currentOffset = offsetRef.current;
+      const currentZoom = zoomRef.current;
+      const newX = currentOffset.x + deltaX;
+      const newY = currentOffset.y + deltaY;
       
       // Constrain panning to canvas bounds (accounting for zoom)
-      const scaledWidth = totalWidth * zoom;
-      const scaledHeight = totalHeight * zoom;
+      const scaledWidth = totalWidth * currentZoom;
+      const scaledHeight = totalHeight * currentZoom;
       const maxX = 0; // Can't pan right beyond left edge
       const minX = window.innerWidth - scaledWidth; // Can't pan left beyond right edge
       const maxY = 0; // Can't pan down beyond top edge
@@ -215,16 +218,12 @@ export function Gallery({}: GalleryProps) {
         ? Math.max(minY, Math.min(maxY, newY))
         : newY;
       
-      setOffset({
-        x: constrainedX,
-        y: constrainedY,
-      });
+      const nextOffset = { x: constrainedX, y: constrainedY };
+      offsetRef.current = nextOffset;
+      scheduleTransform(zoomRef.current, nextOffset);
       
       // Update panStart to current position for smooth continuous dragging
-      setPanStart({
-        x: e.clientX,
-        y: e.clientY,
-      });
+      panStartRef.current = { x: e.clientX, y: e.clientY };
       
       e.preventDefault();
     }
@@ -232,6 +231,8 @@ export function Gallery({}: GalleryProps) {
 
   const handleMouseUp = () => {
     setIsPanning(false);
+    setZoom(zoomRef.current);
+    setOffset(offsetRef.current);
   };
 
   // Calculate initial zoom to fit all shapes in viewport
@@ -264,6 +265,29 @@ export function Gallery({}: GalleryProps) {
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   useEffect(() => { offsetRef.current = offset; }, [offset]);
 
+  const applyTransform = (z: number, off: { x: number; y: number }) => {
+    const el = canvasRef.current;
+    if (!el) return;
+    el.style.transform = `translate3d(${off.x}px, ${off.y}px, 0) scale(${z})`;
+  };
+
+  const scheduleTransform = (z: number, off: { x: number; y: number }) => {
+    pendingTransformRef.current = { zoom: z, offset: off };
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        const pending = pendingTransformRef.current;
+        if (pending) {
+          applyTransform(pending.zoom, pending.offset);
+        }
+        rafIdRef.current = null;
+      });
+    }
+  };
+
+  useEffect(() => {
+    applyTransform(zoom, offset);
+  }, [zoom, offset]);
+
   // Prevent browser zoom and handle wheel/gesture events at document level
   // This ensures Safari can't intercept events on child elements (images)
   useEffect(() => {
@@ -294,10 +318,10 @@ export function Gallery({}: GalleryProps) {
         const newOffsetX = mouseX - canvasX * newZoom;
         const newOffsetY = mouseY - canvasY * newZoom;
 
+        const nextOffset = { x: newOffsetX, y: newOffsetY };
         zoomRef.current = newZoom;
-        offsetRef.current = { x: newOffsetX, y: newOffsetY };
-        setZoom(newZoom);
-        setOffset({ x: newOffsetX, y: newOffsetY });
+        offsetRef.current = nextOffset;
+        scheduleTransform(newZoom, nextOffset);
       } else {
         // Pan
         const currentOffset = offsetRef.current;
@@ -306,8 +330,16 @@ export function Gallery({}: GalleryProps) {
           y: currentOffset.y - e.deltaY,
         };
         offsetRef.current = newOffset;
-        setOffset(newOffset);
+        scheduleTransform(zoomRef.current, newOffset);
       }
+
+      if (wheelEndTimeoutRef.current !== null) {
+        window.clearTimeout(wheelEndTimeoutRef.current);
+      }
+      wheelEndTimeoutRef.current = window.setTimeout(() => {
+        setZoom(zoomRef.current);
+        setOffset(offsetRef.current);
+      }, 120);
     };
 
     const preventTouchZoom = (e: TouchEvent) => {
@@ -353,8 +385,7 @@ export function Gallery({}: GalleryProps) {
       offsetRef.current = { x: newOffsetX, y: newOffsetY };
       lastGestureScaleRef.current = currentScale;
 
-      setZoom(newZoom);
-      setOffset({ x: newOffsetX, y: newOffsetY });
+      scheduleTransform(newZoom, { x: newOffsetX, y: newOffsetY });
     };
 
     const handleGestureEnd = (e: Event) => {
@@ -362,6 +393,13 @@ export function Gallery({}: GalleryProps) {
       e.stopPropagation();
       isGestureActiveRef.current = false;
       lastGestureScaleRef.current = 1;
+      // Sync state once at end of gesture to avoid re-render jitter mid-gesture
+      setZoom(zoomRef.current);
+      setOffset(offsetRef.current);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
 
     document.addEventListener('wheel', handleWheelEvent, { passive: false });
@@ -398,7 +436,7 @@ export function Gallery({}: GalleryProps) {
       lastTouchCenterRef.current = getTouchCenter(e.touches[0], e.touches[1]);
     } else if (e.touches.length === 1) {
       setIsPanning(true);
-      setPanStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+      panStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     }
   };
 
@@ -437,14 +475,16 @@ export function Gallery({}: GalleryProps) {
       lastTouchDistanceRef.current = distance;
       lastTouchCenterRef.current = center;
 
-      setZoom(newZoom);
-      setOffset({ x: newOffsetX, y: newOffsetY });
+      scheduleTransform(newZoom, { x: newOffsetX, y: newOffsetY });
     } else if (e.touches.length === 1 && isPanning) {
-      const deltaX = e.touches[0].clientX - panStart.x;
-      const deltaY = e.touches[0].clientY - panStart.y;
+      const deltaX = e.touches[0].clientX - panStartRef.current.x;
+      const deltaY = e.touches[0].clientY - panStartRef.current.y;
 
-      setOffset(prev => ({ x: prev.x + deltaX, y: prev.y + deltaY }));
-      setPanStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+      const currentOffset = offsetRef.current;
+      const nextOffset = { x: currentOffset.x + deltaX, y: currentOffset.y + deltaY };
+      offsetRef.current = nextOffset;
+      scheduleTransform(zoomRef.current, nextOffset);
+      panStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     }
   };
 
@@ -452,6 +492,8 @@ export function Gallery({}: GalleryProps) {
     setIsPanning(false);
     lastTouchDistanceRef.current = null;
     lastTouchCenterRef.current = null;
+    setZoom(zoomRef.current);
+    setOffset(offsetRef.current);
   };
 
   return (
@@ -515,15 +557,16 @@ export function Gallery({}: GalleryProps) {
         </div>
       ) : !isLoading ? (
         <div
+          ref={canvasRef}
           className="absolute"
           style={{
             width: `${totalWidth}px`,
             height: `${totalHeight}px`,
             left: 0,
             top: 0,
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
             transformOrigin: 'top left',
             pointerEvents: 'none',
+            willChange: 'transform',
           }}
         >
           {allSubmissions.map((submission, index) => {
