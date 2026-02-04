@@ -5,7 +5,7 @@ const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing
 const DESKTOP_SHAPES_PER_ROW = 5; // Desktop shapes per row
 const MOBILE_SHAPES_PER_ROW = 3;  // Mobile shapes per row
 const MOBILE_INITIAL_ZOOM = 1;
-const MOBILE_BOTTOM_SPARE_ROWS = 0.25;
+const MOBILE_BOTTOM_SPARE_ROWS = 0.1;
 
 interface Submission {
   id: string;
