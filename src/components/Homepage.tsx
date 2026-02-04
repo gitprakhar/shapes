@@ -75,7 +75,7 @@ export function Homepage() {
         }}
       >
         <div className="text-left md:text-center max-w-4xl" style={{ color: '#232323' }}>
-          <div className="font-serif text-[80px] md:text-[120px] 2xl:text-[180px] font-normal leading-none tracking-tight pointer-events-none">
+          <div className="font-serif text-[70px] md:text-[120px] 2xl:text-[180px] font-normal leading-none tracking-tight pointer-events-none">
             <em>draw anything*</em>
           </div>
 
