@@ -203,7 +203,6 @@ export function Gallery({}: GalleryProps) {
       
       // Apply the delta to the current offset
       const currentOffset = offsetRef.current;
-      const currentZoom = zoomRef.current;
       const newX = currentOffset.x + deltaX;
       const newY = currentOffset.y + deltaY;
       
