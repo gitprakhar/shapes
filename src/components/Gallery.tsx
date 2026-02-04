@@ -4,6 +4,9 @@ const GAP = 40; // Gap between drawings
 const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing
 const DESKTOP_SHAPES_PER_ROW = 5; // Desktop shapes per row
 const MOBILE_SHAPES_PER_ROW = 3;  // Mobile shapes per row
+const DESKTOP_INITIAL_ZOOM_MAX = 1.6;
+const DESKTOP_ZOOM_IN_FACTOR = 2.5;
+const DESKTOP_BOTTOM_SPARE_ROWS = 0.1;
 const MOBILE_INITIAL_ZOOM = 1;
 const MOBILE_BOTTOM_SPARE_ROWS = 0.1;
 
@@ -204,23 +207,7 @@ export function Gallery({}: GalleryProps) {
       const newX = currentOffset.x + deltaX;
       const newY = currentOffset.y + deltaY;
       
-      // Constrain panning to canvas bounds (accounting for zoom)
-      const scaledWidth = totalWidth * currentZoom;
-      const scaledHeight = totalHeight * currentZoom;
-      const maxX = 0; // Can't pan right beyond left edge
-      const minX = window.innerWidth - scaledWidth; // Can't pan left beyond right edge
-      const maxY = 0; // Can't pan down beyond top edge
-      const minY = window.innerHeight - scaledHeight; // Can't pan up beyond bottom edge
-      
-      // Only constrain if canvas is larger than viewport
-      const constrainedX = scaledWidth > window.innerWidth 
-        ? Math.max(minX, Math.min(maxX, newX))
-        : newX;
-      const constrainedY = scaledHeight > window.innerHeight
-        ? Math.max(minY, Math.min(maxY, newY))
-        : newY;
-      
-      const nextOffset = { x: constrainedX, y: constrainedY };
+      const nextOffset = { x: newX, y: newY };
       offsetRef.current = nextOffset;
       scheduleTransform(zoomRef.current, nextOffset);
       
@@ -289,15 +276,17 @@ export function Gallery({}: GalleryProps) {
 
       const zoomX = availableWidth / totalWidth;
       const zoomY = availableHeight / totalHeight;
-      const initialZoom = Math.min(zoomX, zoomY, 1);
+      const fitZoom = Math.min(zoomX, zoomY);
+      const initialZoom = Math.min(fitZoom * DESKTOP_ZOOM_IN_FACTOR, DESKTOP_INITIAL_ZOOM_MAX);
 
-      // Center the canvas
-      const scaledWidth = totalWidth * initialZoom;
-      const scaledHeight = totalHeight * initialZoom;
-      const centerX = (containerWidth - scaledWidth) / 2;
-      const centerY = (containerHeight - scaledHeight) / 2;
+      const extraSpace = (DRAWING_DISPLAY_SIZE + GAP) * DESKTOP_BOTTOM_SPARE_ROWS;
+      const rawOffset = {
+        x: (containerWidth - totalWidth * initialZoom) / 2,
+        y: containerHeight - extraSpace - totalHeight * initialZoom,
+      };
+      const nextOffset = clampOffset(rawOffset, initialZoom, { bottomPad: extraSpace });
       setZoom(initialZoom);
-      setOffset({ x: centerX, y: centerY });
+      setOffset(nextOffset);
     }
   }, [allSubmissions.length, totalWidth, totalHeight, isMobile, shapesPerRow]);
   
