@@ -5,8 +5,8 @@ const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing
 const DESKTOP_SHAPES_PER_ROW = 5; // Desktop shapes per row
 const MOBILE_SHAPES_PER_ROW = 3;  // Mobile shapes per row
 const DESKTOP_INITIAL_ZOOM_MAX = 1.6;
-const DESKTOP_ZOOM_IN_FACTOR = 3.5;
-const DESKTOP_BOTTOM_SPARE_ROWS = 0.1;
+const DESKTOP_ZOOM_IN_FACTOR = 2.5;
+const DESKTOP_BOTTOM_SPARE_ROWS = 0.25;
 const MOBILE_INITIAL_ZOOM = 1;
 const MOBILE_BOTTOM_SPARE_ROWS = 0.1;
 
@@ -21,13 +21,7 @@ interface Submission {
   y: number;
 }
 
-interface GalleryProps {
-  submissions: Submission[];
-  onAddSubmission: (submission: Submission) => void;
-  onNewDrawing: () => void;
-}
-
-export function Gallery({}: GalleryProps) {
+export function DeleteDrawings() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -40,100 +34,54 @@ export function Gallery({}: GalleryProps) {
   const lastTouchDistanceRef = useRef<number | null>(null);
   const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
   const lastGestureScaleRef = useRef<number>(1);
-  const isGestureActiveRef = useRef(false); // Track if Safari gesture is active to avoid double-handling
+  const isGestureActiveRef = useRef(false);
   const rafIdRef = useRef<number | null>(null);
   const pendingTransformRef = useRef<{ zoom: number; offset: { x: number; y: number } } | null>(null);
   const wheelEndTimeoutRef = useRef<number | null>(null);
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
-  // Load all submissions from Supabase on mount and when submissions change
   useEffect(() => {
-    // Detect mobile for responsive grid (3 per row on mobile)
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768); // md breakpoint
+      setIsMobile(window.innerWidth < 768);
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
 
     const loadSubmissions = async () => {
       try {
-        const { supabase } = await import('@/lib/supabase');
-        const today = new Date().toISOString().split('T')[0];
-        
-        // Get today's daily_shape_id
-        const { data: dailyShape, error: shapeError } = await supabase
-          .from('daily_shapes')
-          .select('id')
-          .eq('date', today)
-          .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
-        
-        if (shapeError) {
+        const shapeRes = await fetch('/api/shape');
+        const shapePayload = await shapeRes.json();
+        const shape = shapePayload.shape;
+
+        if (!shape?.id) {
           setAllSubmissions([]);
           return;
         }
-        
-        // Load drawings - if daily shape exists, filter by it, otherwise show all recent drawings
-        let drawings;
-        let drawingsError;
-        
-        let shapeToUse = dailyShape;
 
-        // If no shape for today, get the most recent shape
-        if (!shapeToUse) {
-          const { data: recentShape } = await supabase
-            .from('daily_shapes')
-            .select('id')
-            .order('date', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        const drawingsRes = await fetch(`/api/drawings?shapeId=${shape.id}&order=asc`);
+        const drawingsPayload = await drawingsRes.json();
+        const drawings = drawingsPayload.drawings || [];
 
-          shapeToUse = recentShape;
-        }
-
-        if (shapeToUse) {
-          // Load all drawings for the shape
-          const result = await supabase
-            .from('user_drawings')
-            .select('id, daily_shape_id, drawing_paths, created_at')
-            .eq('daily_shape_id', shapeToUse.id)
-            .order('created_at', { ascending: true });
-
-          drawings = result.data;
-          drawingsError = result.error;
-        } else {
-          // No shapes exist at all
-          drawings = [];
-          drawingsError = null;
-        }
-        
-        if (drawingsError) {
-          setAllSubmissions([]);
-          return;
-        }
-        
-        // Convert Supabase format to Submission format
-        const submissions: Submission[] = (drawings || []).map((drawing: any) => {
-          // Handle both possible structures: drawing_paths as object or direct properties
+        const submissions: Submission[] = drawings.map((drawing: any) => {
           const drawingPaths = typeof drawing.drawing_paths === 'object' && drawing.drawing_paths !== null
             ? drawing.drawing_paths
             : {};
-          
-          const submission = {
+
+          return {
             id: drawing.id,
             svgString: drawingPaths.svgString,
             imageData: drawingPaths.imageData,
             drawingPaths: drawingPaths.drawingPaths,
-            author: 'User', // Could be enhanced with user auth later
+            author: 'User',
             note: '',
             x: 0,
             y: 0,
           };
-          
-          return submission;
         });
-        
+
         setAllSubmissions(submissions);
         setIsLoading(false);
       } catch (error) {
@@ -141,54 +89,45 @@ export function Gallery({}: GalleryProps) {
         setIsLoading(false);
       }
     };
-    
+
     loadSubmissions();
-    
-    // Refresh every 5 seconds to get new submissions
+
     const interval = setInterval(() => {
       loadSubmissions();
     }, 5000);
-    
+
     return () => {
       clearInterval(interval);
       window.removeEventListener('resize', checkMobile);
     };
   }, []);
-  
-  // Calculate time remaining until midnight
+
   useEffect(() => {
     const updateTimeRemaining = () => {
       const now = new Date();
       const midnight = new Date(now);
-      midnight.setHours(24, 0, 0, 0); // Next midnight
-      
+      midnight.setHours(24, 0, 0, 0);
+
       const diff = midnight.getTime() - now.getTime();
       const hours = Math.floor(diff / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      
+
       setTimeRemaining(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`);
     };
-    
-    // Update immediately
+
     updateTimeRemaining();
-    
-    // Update every minute (since we're not showing seconds)
     const interval = setInterval(updateTimeRemaining, 60000);
-    
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate grid layout: responsive shapes per row
   const shapesPerRow = isMobile ? MOBILE_SHAPES_PER_ROW : DESKTOP_SHAPES_PER_ROW;
   const numRows = Math.ceil(allSubmissions.length / shapesPerRow);
   const totalWidth = shapesPerRow * DRAWING_DISPLAY_SIZE + (shapesPerRow - 1) * GAP;
   const totalHeight = numRows * DRAWING_DISPLAY_SIZE + (numRows - 1) * GAP;
 
-  // Handle panning
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) {
       setIsPanning(true);
-      // Store the initial mouse position (absolute screen coordinates)
       panStartRef.current = { x: e.clientX, y: e.clientY };
       e.preventDefault();
       e.stopPropagation();
@@ -197,22 +136,18 @@ export function Gallery({}: GalleryProps) {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning) {
-      // Calculate the delta from where we started dragging
       const deltaX = e.clientX - panStartRef.current.x;
       const deltaY = e.clientY - panStartRef.current.y;
-      
-      // Apply the delta to the current offset
+
       const currentOffset = offsetRef.current;
       const newX = currentOffset.x + deltaX;
       const newY = currentOffset.y + deltaY;
-      
+
       const nextOffset = { x: newX, y: newY };
       offsetRef.current = nextOffset;
       scheduleTransform(zoomRef.current, nextOffset);
-      
-      // Update panStart to current position for smooth continuous dragging
+
       panStartRef.current = { x: e.clientX, y: e.clientY };
-      
       e.preventDefault();
     }
   };
@@ -243,7 +178,6 @@ export function Gallery({}: GalleryProps) {
     return { x: constrainedX, y: constrainedY };
   };
 
-  // Calculate initial zoom/offset
   useEffect(() => {
     if (allSubmissions.length > 0 && containerRef.current) {
       const containerWidth = window.innerWidth;
@@ -256,6 +190,7 @@ export function Gallery({}: GalleryProps) {
         const fitWidthZoom = availableWidth / totalWidth;
         const fitRowHeightZoom = availableHeight / DRAWING_DISPLAY_SIZE;
         const initialZoom = Math.min(MOBILE_INITIAL_ZOOM, fitWidthZoom, fitRowHeightZoom, 1);
+
         const extraSpace = (DRAWING_DISPLAY_SIZE + GAP) * MOBILE_BOTTOM_SPARE_ROWS;
         const rawOffset = {
           x: (containerWidth - totalWidth * initialZoom) / 2,
@@ -268,7 +203,6 @@ export function Gallery({}: GalleryProps) {
         return;
       }
 
-      // Desktop: fit all shapes with some padding
       const padding = 80;
       const availableWidth = containerWidth - padding * 2;
       const availableHeight = containerHeight - padding * 2;
@@ -288,8 +222,7 @@ export function Gallery({}: GalleryProps) {
       setOffset(nextOffset);
     }
   }, [allSubmissions.length, totalWidth, totalHeight, isMobile, shapesPerRow]);
-  
-  // Keep refs in sync with state
+
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   useEffect(() => { offsetRef.current = offset; }, [offset]);
 
@@ -316,26 +249,20 @@ export function Gallery({}: GalleryProps) {
     applyTransform(zoom, offset);
   }, [zoom, offset]);
 
-  // Prevent browser zoom and handle wheel/gesture events at document level
-  // This ensures Safari can't intercept events on child elements (images)
   useEffect(() => {
-    // Detect Safari (supports GestureEvent) to avoid double-handling pinch zoom
     const isSafari = 'GestureEvent' in window;
 
     const handleWheelEvent = (e: WheelEvent) => {
       e.preventDefault();
 
-      // Skip wheel zoom entirely on Safari — gesture handler handles it
       if (isGestureActiveRef.current) return;
 
       if ((e.ctrlKey || e.metaKey) && !isSafari) {
-        // Zoom towards cursor using multiplicative factor for smooth behavior
         const currentZoom = zoomRef.current;
         const currentOffset = offsetRef.current;
         const mouseX = e.clientX;
         const mouseY = e.clientY;
 
-        // Clamp deltaY to prevent large jumps on Chrome
         const clampedDelta = Math.max(-50, Math.min(50, e.deltaY));
         const zoomFactor = Math.exp(-clampedDelta * 0.01);
         const newZoom = Math.max(0.1, Math.min(2, currentZoom * zoomFactor));
@@ -351,7 +278,6 @@ export function Gallery({}: GalleryProps) {
         offsetRef.current = nextOffset;
         scheduleTransform(newZoom, nextOffset);
       } else {
-        // Pan
         const currentOffset = offsetRef.current;
         const newOffset = {
           x: currentOffset.x - e.deltaX,
@@ -421,7 +347,6 @@ export function Gallery({}: GalleryProps) {
       e.stopPropagation();
       isGestureActiveRef.current = false;
       lastGestureScaleRef.current = 1;
-      // Sync state once at end of gesture to avoid re-render jitter mid-gesture
       setZoom(zoomRef.current);
       setOffset(offsetRef.current);
       if (rafIdRef.current !== null) {
@@ -447,8 +372,6 @@ export function Gallery({}: GalleryProps) {
     };
   }, []);
 
-
-  // Touch handlers for mobile pinch-to-zoom and two-finger pan
   const getTouchDistance = (t1: React.Touch, t2: React.Touch) =>
     Math.sqrt(Math.pow(t2.clientX - t1.clientX, 2) + Math.pow(t2.clientY - t1.clientY, 2));
 
@@ -485,16 +408,11 @@ export function Gallery({}: GalleryProps) {
       const currentZoom = zoomRef.current;
       const currentOffset = offsetRef.current;
 
-      // Ratio-based zoom
       const newZoom = Math.max(0.1, Math.min(2, currentZoom * (distance / prevDistance)));
 
-      // Transform: translate(offset) scale(zoom), origin top-left
-      // screenX = offset.x + cx * zoom
-      // cx = (screenX - offset.x) / zoom
       const canvasX = (prevCenter.x - currentOffset.x) / currentZoom;
       const canvasY = (prevCenter.y - currentOffset.y) / currentZoom;
 
-      // New offset: same canvas point under new center at new zoom
       const newOffsetX = center.x - canvasX * newZoom;
       const newOffsetY = center.y - canvasY * newZoom;
 
@@ -524,6 +442,29 @@ export function Gallery({}: GalleryProps) {
     setOffset(offsetRef.current);
   };
 
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Delete this drawing?')) return;
+    setDeletingIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    try {
+      const res = await fetch(`/api/drawings/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        window.alert('Failed to delete drawing.');
+        return;
+      }
+      setAllSubmissions((prev) => prev.filter((s) => s.id !== id));
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -542,7 +483,6 @@ export function Gallery({}: GalleryProps) {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Countdown timer in top right */}
       <div
         style={{
           position: 'absolute',
@@ -551,22 +491,36 @@ export function Gallery({}: GalleryProps) {
           zIndex: 1000,
         }}
       >
-        <div 
+        <div
           className="text-[14px] 2xl:text-[21px]"
-          style={{ 
-          color: '#232323', 
-          fontFamily: 'var(--font-sans)',
-          fontWeight: 'normal',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}>
+          style={{
+            color: '#232323',
+            fontFamily: 'var(--font-sans)',
+            fontWeight: 'normal',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
           <span>Next shape in</span>
           <span style={{ letterSpacing: '1px' }}>{timeRemaining}</span>
         </div>
       </div>
-      
-      {/* Dot grid background */}
+
+      <div
+        style={{
+          position: 'absolute',
+          top: '20px',
+          left: '20px',
+          zIndex: 1000,
+          color: '#B3261E',
+          fontFamily: 'var(--font-sans)',
+          fontSize: '14px',
+        }}
+      >
+        Delete mode
+      </div>
+
       <div
         className="absolute inset-0"
         style={{
@@ -574,40 +528,7 @@ export function Gallery({}: GalleryProps) {
           backgroundSize: '24px 24px',
         }}
       />
-      
-      {/* Loading animation - skeleton grid */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${shapesPerRow}, 180px)`,
-              gap: '12px',
-            }}
-          >
-            {Array.from({ length: shapesPerRow * 2 }).map((_, i) => (
-              <div
-                key={i}
-                style={{
-                  width: '180px',
-                  height: '180px',
-                  backgroundColor: '#E8E8E8',
-                  animation: 'pulse 1.5s ease-in-out infinite',
-                  animationDelay: `${(i % shapesPerRow) * 0.1}s`,
-                }}
-              />
-            ))}
-          </div>
-          <style>{`
-            @keyframes pulse {
-              0%, 100% { opacity: 0.4; }
-              50% { opacity: 0.7; }
-            }
-          `}</style>
-        </div>
-      )}
 
-      {/* Render all drawings as SVGs */}
       {!isLoading && allSubmissions.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center" style={{ color: '#232323' }}>
@@ -625,23 +546,22 @@ export function Gallery({}: GalleryProps) {
             left: 0,
             top: 0,
             transformOrigin: 'top left',
-            pointerEvents: 'none',
+            pointerEvents: 'auto',
             willChange: 'transform',
           }}
         >
           {allSubmissions.map((submission, index) => {
-            // Calculate row and column position (responsive: 3 per row on mobile, 5 on desktop)
             const row = Math.floor(index / shapesPerRow);
             const col = index % shapesPerRow;
             const x = col * (DRAWING_DISPLAY_SIZE + GAP);
             const y = row * (DRAWING_DISPLAY_SIZE + GAP);
-            
-            // Prefer SVG string if available (new format)
+
+            const isDeleting = deletingIds.has(submission.id);
+
             if (submission.svgString) {
-              // SVG is saved at 500x500, scale up to display size (600px)
               const svgSize = 500;
               const scale = DRAWING_DISPLAY_SIZE / svgSize;
-              
+
               return (
                 <div
                   key={submission.id}
@@ -654,7 +574,6 @@ export function Gallery({}: GalleryProps) {
                     overflow: 'hidden',
                   }}
                 >
-                  {/* Rectangle background */}
                   <div
                     style={{
                       position: 'absolute',
@@ -664,7 +583,6 @@ export function Gallery({}: GalleryProps) {
                       zIndex: 0,
                     }}
                   />
-                  {/* SVG content - scaled up */}
                   <div
                     style={{
                       position: 'relative',
@@ -676,11 +594,32 @@ export function Gallery({}: GalleryProps) {
                     }}
                     dangerouslySetInnerHTML={{ __html: submission.svgString }}
                   />
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => handleDelete(submission.id)}
+                    onMouseDown={(e) => { e.stopPropagation(); }}
+                    onTouchStart={(e) => { e.stopPropagation(); }}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '10px',
+                      zIndex: 2,
+                      background: isDeleting ? '#E57373' : '#E53935',
+                      color: '#fff',
+                      borderRadius: '999px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      border: 'none',
+                      cursor: isDeleting ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {isDeleting ? 'Deleting…' : 'Delete'}
+                  </button>
                 </div>
               );
             }
-            
-            // Fallback to imageData for old submissions
+
             if (submission.imageData) {
               return (
                 <div
@@ -696,7 +635,6 @@ export function Gallery({}: GalleryProps) {
                     justifyContent: 'center',
                   }}
                 >
-                  {/* Rectangle background */}
                   <div
                     style={{
                       position: 'absolute',
@@ -706,7 +644,6 @@ export function Gallery({}: GalleryProps) {
                       zIndex: 0,
                     }}
                   />
-                  {/* Image content */}
                   <img
                     src={submission.imageData}
                     alt={`Drawing ${index + 1}`}
@@ -720,10 +657,32 @@ export function Gallery({}: GalleryProps) {
                       objectFit: 'contain',
                     }}
                   />
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => handleDelete(submission.id)}
+                    onMouseDown={(e) => { e.stopPropagation(); }}
+                    onTouchStart={(e) => { e.stopPropagation(); }}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '10px',
+                      zIndex: 2,
+                      background: isDeleting ? '#E57373' : '#E53935',
+                      color: '#fff',
+                      borderRadius: '999px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      border: 'none',
+                      cursor: isDeleting ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {isDeleting ? 'Deleting…' : 'Delete'}
+                  </button>
                 </div>
               );
             }
-            
+
             return null;
           })}
         </div>
