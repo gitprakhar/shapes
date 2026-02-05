@@ -52,20 +52,57 @@ export function DeleteDrawings() {
 
     const loadSubmissions = async () => {
       try {
-        const shapeRes = await fetch('/api/shape');
-        const shapePayload = await shapeRes.json();
-        const shape = shapePayload.shape;
+        const { supabase } = await import('@/lib/supabase');
+        const today = new Date().toISOString().split('T')[0];
 
-        if (!shape?.id) {
+        const { data: dailyShape, error: shapeError } = await supabase
+          .from('daily_shapes')
+          .select('id')
+          .eq('date', today)
+          .maybeSingle();
+
+        if (shapeError) {
           setAllSubmissions([]);
+          setIsLoading(false);
           return;
         }
 
-        const drawingsRes = await fetch(`/api/drawings?shapeId=${shape.id}&order=asc`);
-        const drawingsPayload = await drawingsRes.json();
-        const drawings = drawingsPayload.drawings || [];
+        let drawings;
+        let drawingsError;
+        let shapeToUse = dailyShape;
 
-        const submissions: Submission[] = drawings.map((drawing: any) => {
+        if (!shapeToUse) {
+          const { data: recentShape } = await supabase
+            .from('daily_shapes')
+            .select('id')
+            .order('date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          shapeToUse = recentShape;
+        }
+
+        if (shapeToUse) {
+          const result = await supabase
+            .from('user_drawings')
+            .select('id, daily_shape_id, drawing_paths, created_at')
+            .eq('daily_shape_id', shapeToUse.id)
+            .order('created_at', { ascending: true });
+
+          drawings = result.data;
+          drawingsError = result.error;
+        } else {
+          drawings = [];
+          drawingsError = null;
+        }
+
+        if (drawingsError) {
+          setAllSubmissions([]);
+          setIsLoading(false);
+          return;
+        }
+
+        const submissions: Submission[] = (drawings || []).map((drawing: any) => {
           const drawingPaths = typeof drawing.drawing_paths === 'object' && drawing.drawing_paths !== null
             ? drawing.drawing_paths
             : {};
@@ -450,8 +487,12 @@ export function DeleteDrawings() {
       return next;
     });
     try {
-      const res = await fetch(`/api/drawings/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
+      const { supabase } = await import('@/lib/supabase');
+      const { error } = await supabase
+        .from('user_drawings')
+        .delete()
+        .eq('id', id);
+      if (error) {
         window.alert('Failed to delete drawing.');
         return;
       }

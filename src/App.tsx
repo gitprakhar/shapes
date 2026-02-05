@@ -4,6 +4,8 @@ import { Homepage } from '@/components/Homepage';
 import { DrawingCanvas } from '@/components/DrawingCanvas';
 import { Gallery } from '@/components/Gallery';
 import { ShapeCreator } from '@/components/ShapeCreator';
+import { DeleteDrawings } from '@/components/DeleteDrawings';
+import { Collage } from '@/components/Collage';
 import { Analytics } from '@vercel/analytics/react';
 
 interface Point {
@@ -139,6 +141,14 @@ function AppContent() {
             onNewDrawing={handleNewDrawing}
           />
         } 
+      />
+      <Route 
+        path="/delete-drawings" 
+        element={<DeleteDrawings />} 
+      />
+      <Route 
+        path="/collage" 
+        element={<Collage />} 
       />
     </Routes>
   );
