@@ -42,8 +42,14 @@ export function DeleteDrawings() {
   const [isLoading, setIsLoading] = useState(true);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [password, setPassword] = useState('');
+  const [isAuthed, setIsAuthed] = useState(() => sessionStorage.getItem('deleteDrawingsAuthed') === 'true');
+  const [authError, setAuthError] = useState('');
+  const requiredPassword = import.meta.env.VITE_DELETE_PASSWORD as string | undefined;
 
   useEffect(() => {
+    if (!isAuthed) return;
+
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
@@ -137,7 +143,21 @@ export function DeleteDrawings() {
       clearInterval(interval);
       window.removeEventListener('resize', checkMobile);
     };
-  }, []);
+  }, [isAuthed]);
+
+  const handleAuth = () => {
+    if (!requiredPassword) {
+      setAuthError('Missing VITE_DELETE_PASSWORD env var.');
+      return;
+    }
+    if (password.trim() !== requiredPassword) {
+      setAuthError('Incorrect password.');
+      return;
+    }
+    sessionStorage.setItem('deleteDrawingsAuthed', 'true');
+    setIsAuthed(true);
+    setAuthError('');
+  };
 
   useEffect(() => {
     const updateTimeRemaining = () => {
@@ -505,6 +525,75 @@ export function DeleteDrawings() {
       });
     }
   };
+
+  if (!isAuthed) {
+    return (
+      <div
+        className="relative w-full h-screen overflow-hidden"
+        style={{
+          backgroundColor: '#F1F1F1',
+          userSelect: 'none',
+        }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(0, 0, 0, 0.15) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div
+            style={{
+              width: 'min(360px, 90vw)',
+              background: '#FFFFFF',
+              border: '1px solid rgba(0,0,0,0.08)',
+              padding: '24px',
+            }}
+          >
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', marginBottom: '10px' }}>
+              Enter password to access delete mode
+            </div>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              style={{
+                width: '100%',
+                height: '40px',
+                border: '1px solid rgba(0,0,0,0.2)',
+                padding: '0 10px',
+                fontSize: '14px',
+                marginBottom: '12px',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleAuth}
+              style={{
+                width: '100%',
+                height: '40px',
+                background: '#111',
+                color: '#fff',
+                border: 'none',
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              Unlock
+            </button>
+            {authError ? (
+              <div style={{ marginTop: '10px', color: '#B3261E', fontSize: '12px' }}>
+                {authError}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
