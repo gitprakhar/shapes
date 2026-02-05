@@ -43,7 +43,7 @@ export function DeleteDrawings() {
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [password, setPassword] = useState('');
-  const [isAuthed, setIsAuthed] = useState(() => sessionStorage.getItem('deleteDrawingsAuthed') === 'true');
+  const [isAuthed, setIsAuthed] = useState(() => sessionStorage.getItem('adminAuthed') === 'true');
   const [authError, setAuthError] = useState('');
   const requiredPassword = import.meta.env.VITE_DELETE_PASSWORD as string | undefined;
 
@@ -154,7 +154,7 @@ export function DeleteDrawings() {
       setAuthError('Incorrect password.');
       return;
     }
-    sessionStorage.setItem('deleteDrawingsAuthed', 'true');
+    sessionStorage.setItem('adminAuthed', 'true');
     setIsAuthed(true);
     setAuthError('');
   };
