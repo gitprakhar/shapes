@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const GAP = 40; // Gap between drawings
 const DRAWING_DISPLAY_SIZE = 600; // Display size for each drawing
@@ -6,9 +7,9 @@ const DESKTOP_SHAPES_PER_ROW = 5; // Desktop shapes per row
 const MOBILE_SHAPES_PER_ROW = 3;  // Mobile shapes per row
 const DESKTOP_INITIAL_ZOOM_MAX = 1.6;
 const DESKTOP_ZOOM_IN_FACTOR = 3.5;
-const DESKTOP_BOTTOM_SPARE_ROWS = 0.1;
+const DESKTOP_BOTTOM_SPARE_ROWS = 0.2;
 const MOBILE_INITIAL_ZOOM = 1;
-const MOBILE_BOTTOM_SPARE_ROWS = 0.1;
+const MOBILE_BOTTOM_SPARE_ROWS = 0.2;
 
 interface Submission {
   id: string;
@@ -24,10 +25,18 @@ interface Submission {
 interface GalleryProps {
   submissions: Submission[];
   onAddSubmission: (submission: Submission) => void;
-  onNewDrawing: () => void;
+  onNewDrawing?: () => void;
 }
 
-export function Gallery({}: GalleryProps) {
+export function Gallery({ onNewDrawing }: GalleryProps) {
+  const navigate = useNavigate();
+  const handleDrawAgain = () => {
+    if (onNewDrawing) {
+      onNewDrawing();
+      return;
+    }
+    navigate('/draw');
+  };
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -149,13 +158,7 @@ export function Gallery({}: GalleryProps) {
     
     loadSubmissions();
     
-    // Refresh every 5 seconds to get new submissions
-    const interval = setInterval(() => {
-      loadSubmissions();
-    }, 5000);
-    
     return () => {
-      clearInterval(interval);
       window.removeEventListener('resize', checkMobile);
     };
   }, []);
@@ -603,6 +606,16 @@ export function Gallery({}: GalleryProps) {
           backgroundSize: '24px 24px',
         }}
       />
+
+      {/* Bottom action */}
+      <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+        <button
+          className="font-sans text-[13px] 2xl:text-[18px] font-semibold px-4 py-2 border-2 border-[#232323] bg-[#232323] text-white hover:bg-transparent hover:text-[#232323] transition-colors rounded-[8px]"
+          onClick={handleDrawAgain}
+        >
+          Draw Again
+        </button>
+      </div>
       
       {/* Loading animation - skeleton grid (matches actual grid sizes) */}
       {isLoading && lastCount >= 30 && (
