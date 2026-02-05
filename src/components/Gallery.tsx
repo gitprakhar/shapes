@@ -46,6 +46,7 @@ export function Gallery({}: GalleryProps) {
   const wheelEndTimeoutRef = useRef<number | null>(null);
   const [allSubmissions, setAllSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [lastCount, setLastCount] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   // Load all submissions from Supabase on mount and when submissions change
@@ -70,7 +71,8 @@ export function Gallery({}: GalleryProps) {
           .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
         
         if (shapeError) {
-          setAllSubmissions([]);
+          // Keep last good data if a fetch error occurs.
+          setIsLoading(false);
           return;
         }
         
@@ -109,7 +111,8 @@ export function Gallery({}: GalleryProps) {
         }
         
         if (drawingsError) {
-          setAllSubmissions([]);
+          // Keep last good data if a fetch error occurs.
+          setIsLoading(false);
           return;
         }
         
@@ -135,9 +138,11 @@ export function Gallery({}: GalleryProps) {
         });
         
         setAllSubmissions(submissions);
+        setLastCount(submissions.length);
         setIsLoading(false);
       } catch (error) {
         setAllSubmissions([]);
+        setLastCount(0);
         setIsLoading(false);
       }
     };
@@ -180,9 +185,10 @@ export function Gallery({}: GalleryProps) {
 
   // Calculate grid layout: responsive shapes per row
   const shapesPerRow = isMobile ? MOBILE_SHAPES_PER_ROW : DESKTOP_SHAPES_PER_ROW;
-  const numRows = Math.ceil(allSubmissions.length / shapesPerRow);
+  const displayShapesPerRow = Math.max(1, Math.min(shapesPerRow, allSubmissions.length || 1));
+  const numRows = Math.ceil(allSubmissions.length / displayShapesPerRow);
   const safeRows = Math.max(1, numRows);
-  const totalWidth = shapesPerRow * DRAWING_DISPLAY_SIZE + (shapesPerRow - 1) * GAP;
+  const totalWidth = displayShapesPerRow * DRAWING_DISPLAY_SIZE + (displayShapesPerRow - 1) * GAP;
   const totalHeight = safeRows * DRAWING_DISPLAY_SIZE + (safeRows - 1) * GAP;
 
   // Handle panning
@@ -244,26 +250,39 @@ export function Gallery({}: GalleryProps) {
     return { x: constrainedX, y: constrainedY };
   };
 
+  const CENTER_THRESHOLD = 30;
+
   // Calculate initial zoom/offset
   useEffect(() => {
     if (allSubmissions.length > 0 && containerRef.current) {
       const containerWidth = window.innerWidth;
       const containerHeight = window.innerHeight;
+      const shouldCenter = allSubmissions.length < CENTER_THRESHOLD;
 
       if (isMobile) {
         const padding = 24;
         const availableWidth = containerWidth - padding * 2;
         const availableHeight = containerHeight - padding * 2;
         const fitWidthZoom = availableWidth / totalWidth;
-        const fitRowHeightZoom = availableHeight / DRAWING_DISPLAY_SIZE;
-        const initialZoom = Math.min(MOBILE_INITIAL_ZOOM, fitWidthZoom, fitRowHeightZoom, 1);
+        const fitHeightZoom = availableHeight / totalHeight;
+        const centeredZoom = Math.min(fitWidthZoom, fitHeightZoom, 1);
+        const initialZoom = shouldCenter
+          ? centeredZoom
+          : Math.min(MOBILE_INITIAL_ZOOM, fitWidthZoom, 1);
         const extraSpace = (DRAWING_DISPLAY_SIZE + GAP) * MOBILE_BOTTOM_SPARE_ROWS;
-        const rawOffset = {
-          x: (containerWidth - totalWidth * initialZoom) / 2,
-          y: containerHeight - extraSpace - totalHeight * initialZoom,
-        };
+        const rawOffset = shouldCenter
+          ? {
+              x: (containerWidth - totalWidth * initialZoom) / 2,
+              y: (containerHeight - totalHeight * initialZoom) / 2,
+            }
+          : {
+              x: (containerWidth - totalWidth * initialZoom) / 2,
+              y: containerHeight - extraSpace - totalHeight * initialZoom,
+            };
 
-        const nextOffset = clampOffset(rawOffset, initialZoom, { bottomPad: extraSpace });
+        const nextOffset = shouldCenter
+          ? clampOffset(rawOffset, initialZoom)
+          : clampOffset(rawOffset, initialZoom, { bottomPad: extraSpace });
         setZoom(initialZoom);
         setOffset(nextOffset);
         return;
@@ -276,15 +295,24 @@ export function Gallery({}: GalleryProps) {
 
       const zoomX = availableWidth / totalWidth;
       const zoomY = availableHeight / totalHeight;
-      const fitZoom = Math.min(zoomX, zoomY);
-      const initialZoom = Math.min(fitZoom * DESKTOP_ZOOM_IN_FACTOR, DESKTOP_INITIAL_ZOOM_MAX);
+      const fitZoom = Math.min(zoomX, zoomY, 1);
+      const initialZoom = shouldCenter
+        ? fitZoom
+        : Math.min(fitZoom * DESKTOP_ZOOM_IN_FACTOR, DESKTOP_INITIAL_ZOOM_MAX);
 
       const extraSpace = (DRAWING_DISPLAY_SIZE + GAP) * DESKTOP_BOTTOM_SPARE_ROWS;
-      const rawOffset = {
-        x: (containerWidth - totalWidth * initialZoom) / 2,
-        y: containerHeight - extraSpace - totalHeight * initialZoom,
-      };
-      const nextOffset = clampOffset(rawOffset, initialZoom, { bottomPad: extraSpace });
+      const rawOffset = shouldCenter
+        ? {
+            x: (containerWidth - totalWidth * initialZoom) / 2,
+            y: (containerHeight - totalHeight * initialZoom) / 2,
+          }
+        : {
+            x: (containerWidth - totalWidth * initialZoom) / 2,
+            y: containerHeight - extraSpace - totalHeight * initialZoom,
+          };
+      const nextOffset = shouldCenter
+        ? clampOffset(rawOffset, initialZoom)
+        : clampOffset(rawOffset, initialZoom, { bottomPad: extraSpace });
       setZoom(initialZoom);
       setOffset(nextOffset);
     }
@@ -577,7 +605,7 @@ export function Gallery({}: GalleryProps) {
       />
       
       {/* Loading animation - skeleton grid (matches actual grid sizes) */}
-      {isLoading && (
+      {isLoading && lastCount >= 30 && (
         <div className="absolute inset-0">
           {(() => {
             const skeletonRows = Math.min(2, safeRows);
