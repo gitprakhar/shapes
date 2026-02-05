@@ -181,8 +181,9 @@ export function Gallery({}: GalleryProps) {
   // Calculate grid layout: responsive shapes per row
   const shapesPerRow = isMobile ? MOBILE_SHAPES_PER_ROW : DESKTOP_SHAPES_PER_ROW;
   const numRows = Math.ceil(allSubmissions.length / shapesPerRow);
+  const safeRows = Math.max(1, numRows);
   const totalWidth = shapesPerRow * DRAWING_DISPLAY_SIZE + (shapesPerRow - 1) * GAP;
-  const totalHeight = numRows * DRAWING_DISPLAY_SIZE + (numRows - 1) * GAP;
+  const totalHeight = safeRows * DRAWING_DISPLAY_SIZE + (safeRows - 1) * GAP;
 
   // Handle panning
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -575,29 +576,59 @@ export function Gallery({}: GalleryProps) {
         }}
       />
       
-      {/* Loading animation - skeleton grid */}
+      {/* Loading animation - skeleton grid (matches actual grid sizes) */}
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${shapesPerRow}, 180px)`,
-              gap: '12px',
-            }}
-          >
-            {Array.from({ length: shapesPerRow * 2 }).map((_, i) => (
+        <div className="absolute inset-0">
+          {(() => {
+            const skeletonRows = Math.min(2, safeRows);
+            const skeletonWidth = shapesPerRow * DRAWING_DISPLAY_SIZE + (shapesPerRow - 1) * GAP;
+            const skeletonHeight = skeletonRows * DRAWING_DISPLAY_SIZE + (skeletonRows - 1) * GAP;
+            const padding = 80;
+            const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+            const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+            const availableWidth = viewportWidth - padding * 2;
+            const availableHeight = viewportHeight - padding * 2;
+            const skeletonZoom = Math.min(availableWidth / skeletonWidth, availableHeight / skeletonHeight, 1);
+            const skeletonOffsetX = (viewportWidth - skeletonWidth * skeletonZoom) / 2;
+            const skeletonOffsetY = (viewportHeight - skeletonHeight * skeletonZoom) / 2;
+
+            return (
               <div
-                key={i}
+                className="absolute"
                 style={{
-                  width: '180px',
-                  height: '180px',
-                  backgroundColor: '#E8E8E8',
-                  animation: 'pulse 1.5s ease-in-out infinite',
-                  animationDelay: `${(i % shapesPerRow) * 0.1}s`,
+                  width: `${skeletonWidth}px`,
+                  height: `${skeletonHeight}px`,
+                  left: 0,
+                  top: 0,
+                  transformOrigin: 'top left',
+                  transform: `translate3d(${skeletonOffsetX}px, ${skeletonOffsetY}px, 0) scale(${skeletonZoom})`,
+                  pointerEvents: 'none',
                 }}
-              />
-            ))}
-          </div>
+              >
+                {Array.from({ length: shapesPerRow * skeletonRows }).map((_, i) => {
+              const row = Math.floor(i / shapesPerRow);
+              const col = i % shapesPerRow;
+              const x = col * (DRAWING_DISPLAY_SIZE + GAP);
+              const y = row * (DRAWING_DISPLAY_SIZE + GAP);
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    left: `${x}px`,
+                    top: `${y}px`,
+                    width: `${DRAWING_DISPLAY_SIZE}px`,
+                    height: `${DRAWING_DISPLAY_SIZE}px`,
+                    backgroundColor: '#E8E8E8',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                    animationDelay: `${(i % shapesPerRow) * 0.1}s`,
+                  }}
+                />
+              );
+                })}
+              </div>
+            );
+          })()}
           <style>{`
             @keyframes pulse {
               0%, 100% { opacity: 0.4; }
