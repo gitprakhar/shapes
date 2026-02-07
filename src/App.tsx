@@ -6,6 +6,7 @@ import { Gallery } from '@/components/Gallery';
 import { ShapeCreator } from '@/components/ShapeCreator';
 import { DeleteDrawings } from '@/components/DeleteDrawings';
 import { Collage } from '@/components/Collage';
+import { AllShapes } from '@/components/AllShapes';
 import { Analytics } from '@vercel/analytics/react';
 
 interface Point {
@@ -149,6 +150,10 @@ function AppContent() {
       <Route 
         path="/collage" 
         element={<Collage />} 
+      />
+      <Route
+        path="/all-shapes"
+        element={<AllShapes />}
       />
     </Routes>
   );

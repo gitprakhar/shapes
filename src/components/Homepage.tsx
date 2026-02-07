@@ -117,6 +117,15 @@ export function Homepage() {
           </button>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => navigate('/all-shapes')}
+        className="absolute bottom-4 right-4 z-20 text-[11px] md:text-[12px] px-3 py-1.5 border border-[#232323]/30 rounded-full bg-white/80 hover:bg-white transition-colors"
+        style={{ color: '#232323' }}
+      >
+        all-shapes
+      </button>
     </div>
   );
 }

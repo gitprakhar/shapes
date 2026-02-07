@@ -23,7 +23,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 }); // Pan offset for drawing canvas (for panning within drawing area)
-  const [initialOffset, setInitialOffset] = useState({ x: 0, y: 0 }); // Initial centered offset for calculating pan limits
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const [zoom, setZoom] = useState(isMobile ? 0.7 : 1); // Zoom level (mobile starts at 70%)
   const zoomRef = useRef(isMobile ? 0.7 : 1); // Ref to track current zoom for gesture handlers
@@ -146,8 +145,6 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     const offsetX = (viewportCenterX + canvasSize / 3) / currentZoom - canvasSize / 2;
     const offsetY = (viewportCenterY + canvasSize / 3) / currentZoom - canvasSize / 2;
     
-    // Store the initial centered offset for panning limits
-    setInitialOffset({ x: offsetX, y: offsetY });
     setCanvasOffset({ x: offsetX, y: offsetY });
   }, [isDrawingEnabled, canvasSize]);
 
@@ -878,31 +875,71 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
     lastTimeRef.current = 0;
   };
 
-  // Reset the drawing (clear all drawn paths and reset zoom/pan)
-  const handleReset = () => {
+  const redrawDrawingPaths = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
-    // Clear all drawing paths
-    drawingPathsRef.current = [];
-    
-    // Reset move count
-    setMoveCount(0);
-    
-    // Reset zoom to default
-    const defaultZoom = isMobile ? 0.7 : 1;
-    setZoom(defaultZoom);
-    zoomRef.current = defaultZoom;
-    
-    // Reset pan position to initial centered position
-    setCanvasOffset(initialOffset);
-    offsetRef.current = { ...initialOffset };
-    
-    // Clear the canvas
+
     const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+
+    // Clear canvas
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = STROKE_OPACITY;
+
+    // Redraw all stored paths (no transforms needed - canvas is positioned via CSS)
+    drawingPathsRef.current.forEach((path) => {
+      if (path.points.length === 0) return;
+
+      drawSvgStamp(ctx, path.points[0].x, path.points[0].y, path.strokeWidth);
+
+      for (let i = 1; i < path.points.length; i++) {
+        const prevPoint = path.points[i - 1];
+        const currentPoint = path.points[i];
+        const distance = Math.sqrt(
+          Math.pow(currentPoint.x - prevPoint.x, 2) + Math.pow(currentPoint.y - prevPoint.y, 2)
+        );
+        const stampSpacing = 8;
+        const stampCount = Math.max(1, Math.floor(distance / stampSpacing));
+
+        for (let j = 0; j <= stampCount; j++) {
+          const t = j / stampCount;
+          const x = prevPoint.x + (currentPoint.x - prevPoint.x) * t;
+          const y = prevPoint.y + (currentPoint.y - prevPoint.y) * t;
+          drawSvgStamp(ctx, x, y, path.strokeWidth);
+        }
+      }
+    });
+  };
+
+  // Undo one move (remove the last drawn path)
+  const handleUndo = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // If a touch is pending but not committed as a move yet, cancel it
+    if (pendingTouchRef.current) {
+      pendingTouchRef.current = null;
+      setIsDrawing(false);
+      lastPointRef.current = null;
+      lastTimeRef.current = 0;
+      return;
     }
+
+    if (drawingPathsRef.current.length === 0) return;
+
+    // Stop any active drawing and remove the last path
+    setIsDrawing(false);
+    lastPointRef.current = null;
+    lastTimeRef.current = 0;
+    drawingPathsRef.current.pop();
+    setMoveCount((prev) => Math.max(0, prev - 1));
+
+    redrawDrawingPaths();
   };
 
   // Capture the drawing and submit as SVG
@@ -1162,12 +1199,12 @@ export function DrawingCanvas({ onSubmit }: DrawingCanvasProps) {
                   {isSubmitting ? 'Submitting...' : 'Submit'}
                 </button>
                 <button
-                  onClick={handleReset}
+                  onClick={handleUndo}
                   disabled={moveCount === 0}
                   className="font-sans text-[13px] 2xl:text-[18px] leading-[1.1] underline cursor-pointer hover:opacity-70 transition-opacity text-left m-0 border-0 bg-transparent font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ color: '#232323', textUnderlineOffset: '0.25em' }}
                 >
-                  Reset Canvas
+                  Undo
                 </button>
               </div>
               <div
